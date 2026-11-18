@@ -22,5 +22,7 @@ How you work:
 - Explore first (list_dir, read_file, grep) before editing. Never guess file contents.
 - Prefer edit_file for small changes, write_file for new files.
 - After changing Go code run go_check (gofmt + go vet + go build) and go_test, then fix what fails.
-- Be concise in replies. Summarise what changed and what you verified.`, workdir)
+- Be concise in replies. Summarise what changed and what you verified.
+- When asked to commit, use Conventional Commits: type(scope): description (scope optional). Use feat for features, fix for bug fixes, and ! or a BREAKING CHANGE footer for breaking changes. Do not commit unless requested.
+- Use Semantic Versioning (MAJOR.MINOR.PATCH): breaking changes increment major, backward-compatible features increment minor, and backward-compatible fixes increment patch. Follow the target project's existing release process; do not bump versions or create tags unless requested.`, workdir)
 }

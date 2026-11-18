@@ -15,6 +15,7 @@ import (
 	llmadapter "github.com/thisham/kodingin/internal/infrastructure/llm"
 	"github.com/thisham/kodingin/internal/infrastructure/tools"
 	"github.com/thisham/kodingin/internal/interfaces/cli"
+	"github.com/thisham/kodingin/internal/version"
 )
 
 func main() {
@@ -23,7 +24,12 @@ func main() {
 	model := flag.String("model", cfg.Model, "model id")
 	yolo := flag.Bool("yes", false, "auto-approve writes and shell commands")
 	prompt := flag.String("p", "", "run a single prompt and exit")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("kodingin v" + version.Current)
+		return
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "kodingin:", err)
 		os.Exit(1)

@@ -16,6 +16,7 @@ import (
 	"github.com/thisham/kodingin/internal/application"
 	"github.com/thisham/kodingin/internal/domain/conversation"
 	"github.com/thisham/kodingin/internal/domain/llm"
+	"github.com/thisham/kodingin/internal/version"
 )
 
 const (
@@ -30,18 +31,20 @@ const (
 )
 
 type REPL struct {
-	agent       *application.Agent
-	in          *bufio.Reader
-	out         io.Writer
-	autoApprove bool
-	model       string
-	workdir     string
-	tokIn       int
-	tokOut      int
-	keyMasked   string
-	keySource   string
-	baseURL     string
-	saveKey     func(key string) (string, error)
+	agent           *application.Agent
+	in              *bufio.Reader
+	out             io.Writer
+	autoApprove     bool
+	model           string
+	workdir         string
+	tokIn           int
+	tokOut          int
+	keyMasked       string
+	keySource       string
+	baseURL         string
+	saveKey         func(key string) (string, error)
+	turnIn, turnOut int
+	turnStarted     time.Time
 }
 
 // SetKeySaver injects how /api-key-set persists a key (infrastructure concern).
@@ -53,20 +56,38 @@ func (r *REPL) SetKeyInfo(masked, source, baseURL string) {
 }
 
 func New(a *application.Agent, model, workdir string, autoApprove bool) *REPL {
-	return &REPL{agent: a, in: bufio.NewReader(os.Stdin), out: os.Stdout, autoApprove: autoApprove, model: model, workdir: workdir}
+	return &REPL{agent: a, in: bufio.NewReader(os.Stdin), out: terminalOutput(os.Stdout), autoApprove: autoApprove, model: model, workdir: workdir}
 }
 
 func (r *REPL) banner() {
-	fmt.Fprintf(r.out, "%s%s ┌─ kodingin ─────────────────────────────%s\n", bold, mag, reset)
-	fmt.Fprintf(r.out, "%s%s │%s model   %s\n", bold, mag, reset, r.model)
-	fmt.Fprintf(r.out, "%s%s │%s workdir %s\n", bold, mag, reset, r.workdir)
-	fmt.Fprintf(r.out, "%s%s └─%s %s/help /model /api-key /api-key-set /clear /yolo /exit · Ctrl-C cancels a turn%s\n\n", bold, mag, reset, dim, reset)
+	fmt.Fprintf(r.out, "\n%s%skodingin%s %sv%s%s\n", bold, mag, reset, dim, version.Current, reset)
+	fmt.Fprintf(r.out, "  %sGo coding agent · explore, edit, verify%s\n\n", dim, reset)
+	r.status()
+	fmt.Fprintf(r.out, "\n  %s/help for commands · trailing \\ for multiline · Ctrl-C cancels a turn%s\n\n", dim, reset)
+}
+
+func (r *REPL) status() {
+	mode := "ask before writes and shell"
+	if r.autoApprove {
+		mode = "auto-approve writes and shell"
+	}
+	fmt.Fprintf(r.out, "  Model      %s\n  Workspace  %s\n  Approval   %s\n  Session    %d input / %d output tokens\n", r.model, r.workdir, mode, r.tokIn, r.tokOut)
+}
+
+func (r *REPL) help() {
+	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Reset conversation and token counts\n  /status            Show model, workspace, approvals and usage\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  End a line with \\ to continue on the next line.\n  Ctrl-C cancels the current turn. Ctrl-D exits.\n\n", bold, reset, bold, reset, bold, reset)
+}
+
+func (r *REPL) beginTurn() {
+	r.turnIn, r.turnOut = 0, 0
+	r.turnStarted = time.Now()
 }
 
 // RunOnce executes a single prompt non-interactively.
 func (r *REPL) RunOnce(prompt string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	r.beginTurn()
 	err := r.agent.Ask(ctx, prompt, r)
 	r.footer()
 	return err
@@ -80,6 +101,9 @@ func (r *REPL) Run() error {
 		if err == io.EOF {
 			fmt.Fprintln(r.out)
 			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read input: %w", err)
 		}
 		line = strings.TrimSpace(line)
 		if line == "/api-key-set" || strings.HasPrefix(line, "/api-key-set ") {
@@ -97,6 +121,7 @@ func (r *REPL) Run() error {
 			return nil
 		case "/clear":
 			r.agent.Reset()
+			r.tokIn, r.tokOut = 0, 0
 			fmt.Fprintf(r.out, "%sconversation cleared%s\n", dim, reset)
 			continue
 		case "/api-key":
@@ -106,10 +131,21 @@ func (r *REPL) Run() error {
 			r.autoApprove = !r.autoApprove
 			fmt.Fprintf(r.out, "%sauto-approve: %v%s\n", yellow, r.autoApprove, reset)
 			continue
+		case "/status":
+			r.status()
+			continue
+		case "/version":
+			fmt.Fprintln(r.out, "kodingin v"+version.Current)
+			continue
 		case "/help":
-			fmt.Fprintf(r.out, "%s/api-key  check the API key works\n/api-key-set [key]  save a new key (prompts hidden if omitted)\n/model [id]  show/list models, or switch to <id>\n/clear  reset conversation\n/yolo   toggle auto-approve for writes and shell\n/exit   quit\nEnd a line with \\ to continue on the next line.%s\n", dim, reset)
+			r.help()
 			continue
 		}
+		if strings.HasPrefix(line, "/") {
+			fmt.Fprintf(r.out, "%sUnknown command %q. Use /help to see commands.%s\n", yellow, strings.Fields(line)[0], reset)
+			continue
+		}
+		r.beginTurn()
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		fmt.Fprintf(r.out, "%sthinking…%s\n", dim, reset)
 		if err := r.agent.Ask(ctx, line, r); err != nil {
@@ -140,7 +176,7 @@ func (r *REPL) readInput() (string, error) {
 }
 
 func (r *REPL) footer() {
-	fmt.Fprintf(r.out, "%s── tokens in %d · out %d%s\n\n", dim, r.tokIn, r.tokOut, reset)
+	fmt.Fprintf(r.out, "%s── %s · tokens in %d / out %d · session %d / %d%s\n\n", dim, time.Since(r.turnStarted).Round(time.Millisecond), r.turnIn, r.turnOut, r.tokIn, r.tokOut, reset)
 }
 
 // ---- application.Observer
@@ -164,8 +200,8 @@ func (r *REPL) OnToolResult(c conversation.ToolCall, out string, err error) {
 		show = show[:6]
 	}
 	for _, l := range show {
-		if len(l) > 120 {
-			l = l[:120] + "…"
+		if len([]rune(l)) > 120 {
+			l = truncate(l, 120)
 		}
 		fmt.Fprintf(r.out, "  %s⎿ %s%s\n", dim, l, reset)
 	}
@@ -179,19 +215,33 @@ func (r *REPL) Approve(c conversation.ToolCall) bool {
 		return true
 	}
 	r.preview(c)
-	fmt.Fprintf(r.out, "  %sallow %s? [y]es / [n]o / [a]lways:%s ", yellow, c.Name, reset)
-	ans, _ := r.in.ReadString('\n')
-	switch strings.ToLower(strings.TrimSpace(ans)) {
-	case "y", "yes", "":
-		return true
-	case "a", "always":
-		r.autoApprove = true
-		return true
+	for {
+		fmt.Fprintf(r.out, "  %sAllow %s? [y]es / [N]o / [a]lways:%s ", yellow, c.Name, reset)
+		ans, err := r.in.ReadString('\n')
+		if err != nil {
+			return false
+		}
+		switch strings.ToLower(strings.TrimSpace(ans)) {
+		case "y", "yes":
+			return true
+		case "", "n", "no":
+			return false
+		case "a", "always":
+			r.autoApprove = true
+			fmt.Fprintln(r.out, "  Auto-approve enabled for this session. Use /yolo to disable.")
+			return true
+		default:
+			fmt.Fprintln(r.out, "  Enter y, n, or a.")
+		}
 	}
-	return false
 }
 
-func (r *REPL) OnUsage(u llm.Usage) { r.tokIn += u.PromptTokens; r.tokOut += u.CompletionTokens }
+func (r *REPL) OnUsage(u llm.Usage) {
+	r.tokIn += u.PromptTokens
+	r.tokOut += u.CompletionTokens
+	r.turnIn += u.PromptTokens
+	r.turnOut += u.CompletionTokens
+}
 
 func (r *REPL) preview(c conversation.ToolCall) {
 	var a map[string]any
@@ -228,9 +278,7 @@ func summarize(args string) string {
 	for _, k := range []string{"path", "command", "pattern"} {
 		if v, ok := a[k]; ok {
 			s := fmt.Sprint(v)
-			if len(s) > 80 {
-				s = s[:80] + "…"
-			}
+			s = truncate(strings.Join(strings.Fields(s), " "), 80)
 			return s
 		}
 	}

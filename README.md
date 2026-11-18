@@ -12,7 +12,13 @@ CLI coding agent for Go/DDD projects, backed by `https://tokenizer.id/v1` (OpenA
     ./kodingin -C . -p "add a User aggregate"  # one shot
     ./kodingin -yes ...                        # auto-approve writes/shell
 
-REPL: `/clear`, `/yolo`, `/help`, `/exit`; trailing `\` for multi-line; Ctrl-C cancels a turn.
+REPL: `/help`, `/status`, `/version`, `/model [id]`, `/api-key`, `/api-key-set`, `/clear`, `/yolo`, `/exit`. Use a trailing `\` for multiline input; Ctrl-C cancels a turn. `/clear` resets conversation and session usage.
+
+The welcome screen shows the version, model, workspace, and approval mode. Each turn reports elapsed time, token usage, and session totals. Tool output uses compact previews. Approval requires `y` (once), `n` (deny, the default), or `a` (auto-approve for the session).
+
+Use `./kodingin --version` to check the version without an API key. Redirected output has no ANSI styling. Set `NO_COLOR=1` to disable color in a terminal.
+
+Commit messages follow **Conventional Commits** and releases follow **Semantic Versioning**. See [CONTRIBUTING.md](CONTRIBUTING.md) for commit types and release steps, and [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## Layout (the agent's own code is DDD too)
     cmd/kodingin/                 composition root
