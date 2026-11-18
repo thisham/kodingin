@@ -37,6 +37,14 @@ type REPL struct {
 	workdir     string
 	tokIn       int
 	tokOut      int
+	keyMasked   string
+	keySource   string
+	baseURL     string
+}
+
+// SetKeyInfo gives the REPL what /api-key displays. The raw key never reaches the UI.
+func (r *REPL) SetKeyInfo(masked, source, baseURL string) {
+	r.keyMasked, r.keySource, r.baseURL = masked, source, baseURL
 }
 
 func New(a *application.Agent, model, workdir string, autoApprove bool) *REPL {
@@ -47,7 +55,7 @@ func (r *REPL) banner() {
 	fmt.Fprintf(r.out, "%s%s ┌─ kodingin ─────────────────────────────%s\n", bold, mag, reset)
 	fmt.Fprintf(r.out, "%s%s │%s model   %s\n", bold, mag, reset, r.model)
 	fmt.Fprintf(r.out, "%s%s │%s workdir %s\n", bold, mag, reset, r.workdir)
-	fmt.Fprintf(r.out, "%s%s └─%s %s/help /model /clear /yolo /exit · Ctrl-C cancels a turn%s\n\n", bold, mag, reset, dim, reset)
+	fmt.Fprintf(r.out, "%s%s └─%s %s/help /model /api-key /clear /yolo /exit · Ctrl-C cancels a turn%s\n\n", bold, mag, reset, dim, reset)
 }
 
 // RunOnce executes a single prompt non-interactively.
@@ -82,12 +90,15 @@ func (r *REPL) Run() error {
 			r.agent.Reset()
 			fmt.Fprintf(r.out, "%sconversation cleared%s\n", dim, reset)
 			continue
+		case "/api-key":
+			r.apiKeyCmd()
+			continue
 		case "/yolo":
 			r.autoApprove = !r.autoApprove
 			fmt.Fprintf(r.out, "%sauto-approve: %v%s\n", yellow, r.autoApprove, reset)
 			continue
 		case "/help":
-			fmt.Fprintf(r.out, "%s/model [id]  show/list models, or switch to <id>\n/clear  reset conversation\n/yolo   toggle auto-approve for writes and shell\n/exit   quit\nEnd a line with \\ to continue on the next line.%s\n", dim, reset)
+			fmt.Fprintf(r.out, "%s/api-key  check the API key works\n/model [id]  show/list models, or switch to <id>\n/clear  reset conversation\n/yolo   toggle auto-approve for writes and shell\n/exit   quit\nEnd a line with \\ to continue on the next line.%s\n", dim, reset)
 			continue
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -246,4 +257,22 @@ func (r *REPL) modelCmd(arg string) {
 		fmt.Fprintf(r.out, "%s%s\n", mark, id)
 	}
 	fmt.Fprintf(r.out, "%sswitch with /model <id>%s\n", dim, reset)
+}
+
+// apiKeyCmd shows the masked key and verifies it with an authenticated GET /models.
+func (r *REPL) apiKeyCmd() {
+	fmt.Fprintf(r.out, "  key      %s\n  source   %s\n  endpoint %s\n", r.keyMasked, r.keySource, r.baseURL)
+	sel, ok := r.agent.Models()
+	if !ok {
+		fmt.Fprintf(r.out, "%s  cannot verify: client has no model listing%s\n", yellow, reset)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	ids, err := sel.ListModels(ctx)
+	if err != nil {
+		fmt.Fprintf(r.out, "  %s✗ not working: %v%s\n", red, err, reset)
+		return
+	}
+	fmt.Fprintf(r.out, "  %s✓ key accepted (%d models available)%s\n", green, len(ids), reset)
 }

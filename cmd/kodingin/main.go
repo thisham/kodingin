@@ -43,6 +43,7 @@ func main() {
 	client := llmadapter.New(cfg.BaseURL, cfg.APIKey, *model)
 	agent := application.NewAgent(client, registry, conversation.New(application.SystemPrompt(root)), cfg.MaxSteps)
 	ui := cli.New(agent, *model, root, *yolo)
+	ui.SetKeyInfo(cfg.MaskedKey(), cfg.APIKeySource, cfg.BaseURL)
 
 	if p := strings.TrimSpace(*prompt + " " + strings.Join(flag.Args(), " ")); p != "" {
 		err = ui.RunOnce(p)
