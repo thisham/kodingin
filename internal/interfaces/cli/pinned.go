@@ -89,7 +89,9 @@ func newPinned(banner string, color bool) *pinned {
 	composer.Prompt = ""
 	composer.ShowLineNumbers = false
 	composer.SetHeight(1)
-	composer.KeyMap.InsertNewline.SetKeys("enter")
+	// Enter submits; Alt+Enter or Ctrl-J insert a newline via (*pinned).newline
+	// (terminals cannot report Shift+Enter). Unbind the textarea's own newline key.
+	composer.KeyMap.InsertNewline.SetEnabled(false)
 	m := &pinned{input: textinput.New(), composer: composer, transcript: viewport.New(0, 0), color: color}
 	m.output.WriteString(terminalText(banner, color))
 	return m
@@ -154,12 +156,15 @@ func (m *pinned) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.editComposer(msg)
 		case tea.KeyEnter:
+			if msg.Alt && m.request == nil {
+				return m, m.newline()
+			}
+			return m, m.submit()
+		case tea.KeyCtrlJ:
 			if m.request != nil {
 				return m, m.submit()
 			}
-			return m, m.editComposer(msg)
-		case tea.KeyCtrlJ:
-			return m, m.submit()
+			return m, m.newline()
 		default:
 			if m.request != nil {
 				return m, m.editInput(msg)
@@ -192,6 +197,15 @@ func (m *pinned) editComposer(msg tea.Msg) tea.Cmd {
 	m.composer, cmd = m.composer.Update(msg)
 	m.resizeInput()
 	return cmd
+}
+
+// newline inserts a line break directly; key-binding dispatch for ctrl+j is unreliable across terminals.
+func (m *pinned) newline() tea.Cmd {
+	if m.composer.Focused() {
+		m.composer.InsertString("\n")
+		m.resizeInput()
+	}
+	return nil
 }
 
 func (m *pinned) resizeInput() {

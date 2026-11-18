@@ -80,7 +80,7 @@ func (r *REPL) status() {
 }
 
 func (r *REPL) help() {
-	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Reset conversation and token counts\n  /status            Show model, workspace, approvals and usage\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /setup             Configure the saved endpoint and model\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  In a terminal, Enter inserts a newline; Ctrl-J submits.\n  End a line with \\ to continue on the next line. Ctrl-C cancels; Ctrl-D exits.\n\n", bold, reset, bold, reset, bold, reset)
+	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Reset conversation and token counts\n  /status            Show model, workspace, approvals and usage\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /setup             Configure the saved endpoint and model\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  Enter sends. Alt+Enter or Ctrl-J inserts a newline.\n  End a line with \\ to continue on the next line. Ctrl-C cancels; Ctrl-D exits.\n\n", bold, reset, bold, reset, bold, reset)
 }
 
 func (r *REPL) beginTurn() {

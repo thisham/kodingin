@@ -60,7 +60,7 @@ func TestPinnedSubmission(t *testing.T) {
 				return false
 			}
 			m.composer.SetValue(tt.input)
-			_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+			_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 			if cmd == nil {
 				t.Fatal("submission did not start")
 			}
@@ -72,6 +72,21 @@ func TestPinnedSubmission(t *testing.T) {
 				t.Fatal("credential was copied into the transcript")
 			}
 		})
+	}
+}
+
+func TestPinnedNewlineKeys(t *testing.T) {
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyCtrlJ}, {Type: tea.KeyEnter, Alt: true}} {
+		m := newPinned("", false)
+		m.ctx = context.Background()
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+		m.run = func(context.Context, string) bool { t.Fatal("newline key submitted"); return false }
+		m.Init()
+		m.composer.SetValue("first")
+		m.Update(key)
+		if m.cancelTurn != nil || m.composer.Value() != "first\n" {
+			t.Fatalf("%v: composer = %q, want newline inserted", key, m.composer.Value())
+		}
 	}
 }
 
