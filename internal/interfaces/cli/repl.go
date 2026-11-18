@@ -15,6 +15,7 @@ import (
 
 	"github.com/thisham/kodingin/internal/application"
 	"github.com/thisham/kodingin/internal/domain/conversation"
+	"github.com/thisham/kodingin/internal/domain/history"
 	"github.com/thisham/kodingin/internal/domain/llm"
 	"github.com/thisham/kodingin/internal/domain/usage"
 	"github.com/thisham/kodingin/internal/version"
@@ -53,6 +54,9 @@ type REPL struct {
 	usagePath       string
 	usageWarned     bool
 	credit          CreditSource
+	historyRepo     history.Repository
+	historyPath     string
+	historyWarned   bool
 }
 
 // SetKeySaver injects how /api-key-set persists a key (infrastructure concern).
@@ -86,7 +90,7 @@ func (r *REPL) status() {
 }
 
 func (r *REPL) help() {
-	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Reset conversation and token counts\n  /status            Show model, workspace, approvals and usage\n  /usage             Token usage this session and saved history\n  /usage-credit      Account credit and limits (login|logout)\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /setup             Configure the saved endpoint and model\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  Enter sends. Alt+Enter or Ctrl-J inserts a newline.\n  End a line with \\ to continue on the next line. Ctrl-C cancels; Ctrl-D exits.\n\n", bold, reset, bold, reset, bold, reset)
+	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Reset conversation and token counts\n  /status            Show model, workspace, approvals and usage\n  /history [n]       Recent prompts across sessions (default 20)\n  /usage             Token usage this session and saved history\n  /usage-credit      Account credit and limits (login|logout)\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /setup             Configure the saved endpoint and model\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  Enter sends. Alt+Enter or Ctrl-J inserts a newline.\n  End a line with \\ to continue on the next line. Ctrl-C cancels; Ctrl-D exits.\n\n", bold, reset, bold, reset, bold, reset)
 }
 
 func (r *REPL) beginTurn() {
@@ -98,6 +102,7 @@ func (r *REPL) beginTurn() {
 func (r *REPL) RunOnce(prompt string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	r.recordPrompt(prompt)
 	r.beginTurn()
 	err := r.agent.Ask(ctx, prompt, r)
 	r.footer()
@@ -133,6 +138,10 @@ func (r *REPL) handleLine(ctx context.Context, line string) (exit bool) {
 	line = strings.TrimSpace(line)
 	if line == "/api-key-set" || strings.HasPrefix(line, "/api-key-set ") {
 		r.apiKeySetCmd(ctx, strings.TrimSpace(strings.TrimPrefix(line, "/api-key-set")))
+		return false
+	}
+	if line == "/history" || strings.HasPrefix(line, "/history ") {
+		r.historyCmd(ctx, strings.TrimSpace(strings.TrimPrefix(line, "/history")))
 		return false
 	}
 	if line == "/usage-credit" || strings.HasPrefix(line, "/usage-credit ") {
@@ -181,6 +190,7 @@ func (r *REPL) handleLine(ctx context.Context, line string) (exit bool) {
 		fmt.Fprintf(r.out, "%sUnknown command %q. Use /help to see commands.%s\n", yellow, strings.Fields(line)[0], reset)
 		return false
 	}
+	r.recordPrompt(line)
 	r.beginTurn()
 	fmt.Fprintf(r.out, "%sthinking…%s\n", dim, reset)
 	if err := r.agent.Ask(ctx, line, r); err != nil {

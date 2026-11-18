@@ -12,6 +12,7 @@ import (
 	"github.com/thisham/kodingin/internal/domain/conversation"
 	"github.com/thisham/kodingin/internal/domain/tool"
 	"github.com/thisham/kodingin/internal/infrastructure/config"
+	"github.com/thisham/kodingin/internal/infrastructure/historystore"
 	llmadapter "github.com/thisham/kodingin/internal/infrastructure/llm"
 	"github.com/thisham/kodingin/internal/infrastructure/portal"
 	"github.com/thisham/kodingin/internal/infrastructure/tools"
@@ -55,6 +56,9 @@ func main() {
 	ui.SetKeySaver(config.SaveAPIKey)
 	if path, err := config.UsageFilePath(); err == nil {
 		ui.SetUsageStore(usagestore.New(path), path)
+	}
+	if path, err := config.HistoryFilePath(); err == nil {
+		ui.SetHistoryStore(historystore.New(path), path)
 	}
 	ui.SetCreditSource(portal.New(cfg.BaseURL, cfg.PortalCookie))
 	ui.SetSettingsSaver(func(settings map[string]string) (string, error) {

@@ -147,3 +147,12 @@ func UsageFilePath() (string, error) {
 	}
 	return filepath.Join(home, ".config", "kodingin", "usage.jsonl"), nil
 }
+
+// HistoryFilePath is where sent prompts are appended.
+func HistoryFilePath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "kodingin", "history.jsonl"), nil
+}
