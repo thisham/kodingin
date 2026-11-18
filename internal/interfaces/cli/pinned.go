@@ -260,6 +260,9 @@ func (m *pinned) submit() tea.Cmd {
 	if strings.HasPrefix(line, "/api-key-set ") {
 		echo = "/api-key-set [hidden]"
 	}
+	if rest, ok := strings.CutPrefix(line, "/usage-credit "); ok && rest != "login" && rest != "logout" {
+		echo = "/usage-credit [hidden]"
+	}
 	m.appendOutput(green + "❯ " + reset + echo + "\n")
 	m.transcript.GotoBottom()
 	ctx, cancel := context.WithCancel(m.ctx)

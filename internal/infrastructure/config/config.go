@@ -14,6 +14,8 @@ type Config struct {
 	AutoApprove                     bool
 	// APIKeySource says where the key came from: "env" or the env file path.
 	APIKeySource string
+	// PortalCookie is the tokenizer.id portal session (Cookie header) used by /usage-credit.
+	PortalCookie string
 }
 
 // MaskedKey shows only the first 4 and last 4 characters.
@@ -39,6 +41,7 @@ func Load() (Config, error) {
 		Model:        get("KODINGIN_MODEL", "claude-sonnet-5-5"),
 		MaxSteps:     50,
 		APIKeySource: src,
+		PortalCookie: os.Getenv("KODINGIN_PORTAL_COOKIE"),
 	}
 	if c.APIKey == "" {
 		return c, errors.New("KODINGIN_API_KEY is not set (env or ~/.config/kodingin/env)")
@@ -134,4 +137,13 @@ func SaveSettings(settings map[string]string) (string, error) {
 		return "", err
 	}
 	return path, os.Chmod(path, 0o600)
+}
+
+// UsageFilePath is where per-call usage history is appended.
+func UsageFilePath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "kodingin", "usage.jsonl"), nil
 }

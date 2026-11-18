@@ -13,7 +13,9 @@ import (
 	"github.com/thisham/kodingin/internal/domain/tool"
 	"github.com/thisham/kodingin/internal/infrastructure/config"
 	llmadapter "github.com/thisham/kodingin/internal/infrastructure/llm"
+	"github.com/thisham/kodingin/internal/infrastructure/portal"
 	"github.com/thisham/kodingin/internal/infrastructure/tools"
+	"github.com/thisham/kodingin/internal/infrastructure/usagestore"
 	"github.com/thisham/kodingin/internal/interfaces/cli"
 	"github.com/thisham/kodingin/internal/version"
 )
@@ -51,6 +53,10 @@ func main() {
 	ui := cli.New(agent, *model, root, *yolo)
 	ui.SetKeyInfo(cfg.MaskedKey(), cfg.APIKeySource, cfg.BaseURL)
 	ui.SetKeySaver(config.SaveAPIKey)
+	if path, err := config.UsageFilePath(); err == nil {
+		ui.SetUsageStore(usagestore.New(path), path)
+	}
+	ui.SetCreditSource(portal.New(cfg.BaseURL, cfg.PortalCookie))
 	ui.SetSettingsSaver(func(settings map[string]string) (string, error) {
 		return config.SaveSettings(settings)
 	})

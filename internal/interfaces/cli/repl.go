@@ -16,6 +16,7 @@ import (
 	"github.com/thisham/kodingin/internal/application"
 	"github.com/thisham/kodingin/internal/domain/conversation"
 	"github.com/thisham/kodingin/internal/domain/llm"
+	"github.com/thisham/kodingin/internal/domain/usage"
 	"github.com/thisham/kodingin/internal/version"
 )
 
@@ -47,6 +48,11 @@ type REPL struct {
 	turnIn, turnOut int
 	turnStarted     time.Time
 	prompt          func(label string, hidden bool) (string, error)
+	sessionUsage    []usage.Record
+	usageRepo       usage.Repository
+	usagePath       string
+	usageWarned     bool
+	credit          CreditSource
 }
 
 // SetKeySaver injects how /api-key-set persists a key (infrastructure concern).
@@ -80,7 +86,7 @@ func (r *REPL) status() {
 }
 
 func (r *REPL) help() {
-	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Reset conversation and token counts\n  /status            Show model, workspace, approvals and usage\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /setup             Configure the saved endpoint and model\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  Enter sends. Alt+Enter or Ctrl-J inserts a newline.\n  End a line with \\ to continue on the next line. Ctrl-C cancels; Ctrl-D exits.\n\n", bold, reset, bold, reset, bold, reset)
+	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Reset conversation and token counts\n  /status            Show model, workspace, approvals and usage\n  /usage             Token usage this session and saved history\n  /usage-credit      Account credit and limits (login|logout)\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /setup             Configure the saved endpoint and model\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  Enter sends. Alt+Enter or Ctrl-J inserts a newline.\n  End a line with \\ to continue on the next line. Ctrl-C cancels; Ctrl-D exits.\n\n", bold, reset, bold, reset, bold, reset)
 }
 
 func (r *REPL) beginTurn() {
@@ -129,6 +135,10 @@ func (r *REPL) handleLine(ctx context.Context, line string) (exit bool) {
 		r.apiKeySetCmd(ctx, strings.TrimSpace(strings.TrimPrefix(line, "/api-key-set")))
 		return false
 	}
+	if line == "/usage-credit" || strings.HasPrefix(line, "/usage-credit ") {
+		r.usageCreditCmd(ctx, strings.TrimSpace(strings.TrimPrefix(line, "/usage-credit")))
+		return false
+	}
 	if line == "/model" || strings.HasPrefix(line, "/model ") {
 		r.modelCmd(ctx, strings.TrimSpace(strings.TrimPrefix(line, "/model")))
 		return false
@@ -141,6 +151,7 @@ func (r *REPL) handleLine(ctx context.Context, line string) (exit bool) {
 	case "/clear":
 		r.agent.Reset()
 		r.tokIn, r.tokOut = 0, 0
+		r.sessionUsage = nil
 		fmt.Fprintf(r.out, "%sconversation cleared%s\n", dim, reset)
 		return false
 	case "/api-key":
@@ -152,6 +163,9 @@ func (r *REPL) handleLine(ctx context.Context, line string) (exit bool) {
 	case "/yolo":
 		r.autoApprove = !r.autoApprove
 		fmt.Fprintf(r.out, "%sauto-approve: %v%s\n", yellow, r.autoApprove, reset)
+		return false
+	case "/usage":
+		r.usageCmd(ctx)
 		return false
 	case "/status":
 		r.status()
@@ -261,6 +275,7 @@ func (r *REPL) OnUsage(u llm.Usage) {
 	r.tokOut += u.CompletionTokens
 	r.turnIn += u.PromptTokens
 	r.turnOut += u.CompletionTokens
+	r.recordUsage(u)
 }
 
 func (r *REPL) preview(c conversation.ToolCall) {

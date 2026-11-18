@@ -58,12 +58,16 @@ type request struct {
 }
 
 type response struct {
+	Model   string `json:"model"`
 	Choices []struct {
 		Message wireMsg `json:"message"`
 	} `json:"choices"`
 	Usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
+		PromptDetails    struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
 	} `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
@@ -136,7 +140,12 @@ func (c *Client) Complete(ctx context.Context, msgs []conversation.Message, tool
 	for _, tc := range w.ToolCalls {
 		out.ToolCalls = append(out.ToolCalls, conversation.ToolCall{ID: tc.ID, Name: tc.Function.Name, Arguments: tc.Function.Arguments})
 	}
-	return out, domainllm.Usage{PromptTokens: r.Usage.PromptTokens, CompletionTokens: r.Usage.CompletionTokens}, nil
+	model := r.Model
+	if model == "" {
+		model = c.model
+	}
+	return out, domainllm.Usage{Model: model, PromptTokens: r.Usage.PromptTokens,
+		CachedTokens: r.Usage.PromptDetails.CachedTokens, CompletionTokens: r.Usage.CompletionTokens}, nil
 }
 
 func truncate(s string) string {

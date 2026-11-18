@@ -8,7 +8,11 @@ import (
 	"github.com/thisham/kodingin/internal/domain/tool"
 )
 
-type Usage struct{ PromptTokens, CompletionTokens int }
+// Usage is what one model call consumed. CachedTokens is the part of PromptTokens served from cache.
+type Usage struct {
+	Model                                        string
+	PromptTokens, CachedTokens, CompletionTokens int
+}
 
 type Client interface {
 	Complete(ctx context.Context, msgs []conversation.Message, tools []tool.Tool) (conversation.Message, Usage, error)
