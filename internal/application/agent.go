@@ -88,3 +88,12 @@ func (a *Agent) Models() (llm.ModelSelector, bool) {
 	s, ok := a.llm.(llm.ModelSelector)
 	return s, ok
 }
+
+// SetAPIKey swaps the credentials used for the rest of the session.
+func (a *Agent) SetAPIKey(key string) bool {
+	s, ok := a.llm.(llm.KeySetter)
+	if ok {
+		s.SetAPIKey(key)
+	}
+	return ok
+}

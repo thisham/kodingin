@@ -77,3 +77,45 @@ func loadEnvFile() string {
 	}
 	return path
 }
+
+// EnvFilePath is where SaveAPIKey writes.
+func EnvFilePath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "kodingin", "env"), nil
+}
+
+// SaveAPIKey writes KODINGIN_API_KEY into the env file (mode 0600), keeping other lines.
+// It writes a temp file and renames it, so a failed write never leaves a half file.
+func SaveAPIKey(key string) (string, error) {
+	path, err := EnvFilePath()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	var lines []string
+	if b, err := os.ReadFile(path); err == nil {
+		for _, l := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+			if k, _, ok := strings.Cut(l, "="); ok && strings.TrimSpace(k) == "KODINGIN_API_KEY" {
+				continue
+			}
+			if l != "" {
+				lines = append(lines, l)
+			}
+		}
+	}
+	lines = append(lines, "KODINGIN_API_KEY="+key)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return "", err
+	}
+	return path, os.Chmod(path, 0o600)
+}

@@ -20,3 +20,6 @@ type ModelSelector interface {
 	SetModel(model string)
 	ListModels(ctx context.Context) ([]string, error)
 }
+
+// KeySetter is implemented by clients whose credentials can change at runtime.
+type KeySetter interface{ SetAPIKey(key string) }

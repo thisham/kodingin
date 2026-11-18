@@ -182,3 +182,5 @@ func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 	}
 	return ids, nil
 }
+
+func (c *Client) SetAPIKey(k string) { c.apiKey = k }

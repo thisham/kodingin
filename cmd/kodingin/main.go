@@ -44,6 +44,7 @@ func main() {
 	agent := application.NewAgent(client, registry, conversation.New(application.SystemPrompt(root)), cfg.MaxSteps)
 	ui := cli.New(agent, *model, root, *yolo)
 	ui.SetKeyInfo(cfg.MaskedKey(), cfg.APIKeySource, cfg.BaseURL)
+	ui.SetKeySaver(config.SaveAPIKey)
 
 	if p := strings.TrimSpace(*prompt + " " + strings.Join(flag.Args(), " ")); p != "" {
 		err = ui.RunOnce(p)

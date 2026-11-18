@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"time"
@@ -40,7 +41,11 @@ type REPL struct {
 	keyMasked   string
 	keySource   string
 	baseURL     string
+	saveKey     func(key string) (string, error)
 }
+
+// SetKeySaver injects how /api-key-set persists a key (infrastructure concern).
+func (r *REPL) SetKeySaver(f func(string) (string, error)) { r.saveKey = f }
 
 // SetKeyInfo gives the REPL what /api-key displays. The raw key never reaches the UI.
 func (r *REPL) SetKeyInfo(masked, source, baseURL string) {
@@ -55,7 +60,7 @@ func (r *REPL) banner() {
 	fmt.Fprintf(r.out, "%s%s ┌─ kodingin ─────────────────────────────%s\n", bold, mag, reset)
 	fmt.Fprintf(r.out, "%s%s │%s model   %s\n", bold, mag, reset, r.model)
 	fmt.Fprintf(r.out, "%s%s │%s workdir %s\n", bold, mag, reset, r.workdir)
-	fmt.Fprintf(r.out, "%s%s └─%s %s/help /model /api-key /clear /yolo /exit · Ctrl-C cancels a turn%s\n\n", bold, mag, reset, dim, reset)
+	fmt.Fprintf(r.out, "%s%s └─%s %s/help /model /api-key /api-key-set /clear /yolo /exit · Ctrl-C cancels a turn%s\n\n", bold, mag, reset, dim, reset)
 }
 
 // RunOnce executes a single prompt non-interactively.
@@ -77,6 +82,10 @@ func (r *REPL) Run() error {
 			return nil
 		}
 		line = strings.TrimSpace(line)
+		if line == "/api-key-set" || strings.HasPrefix(line, "/api-key-set ") {
+			r.apiKeySetCmd(strings.TrimSpace(strings.TrimPrefix(line, "/api-key-set")))
+			continue
+		}
 		if line == "/model" || strings.HasPrefix(line, "/model ") {
 			r.modelCmd(strings.TrimSpace(strings.TrimPrefix(line, "/model")))
 			continue
@@ -98,7 +107,7 @@ func (r *REPL) Run() error {
 			fmt.Fprintf(r.out, "%sauto-approve: %v%s\n", yellow, r.autoApprove, reset)
 			continue
 		case "/help":
-			fmt.Fprintf(r.out, "%s/api-key  check the API key works\n/model [id]  show/list models, or switch to <id>\n/clear  reset conversation\n/yolo   toggle auto-approve for writes and shell\n/exit   quit\nEnd a line with \\ to continue on the next line.%s\n", dim, reset)
+			fmt.Fprintf(r.out, "%s/api-key  check the API key works\n/api-key-set [key]  save a new key (prompts hidden if omitted)\n/model [id]  show/list models, or switch to <id>\n/clear  reset conversation\n/yolo   toggle auto-approve for writes and shell\n/exit   quit\nEnd a line with \\ to continue on the next line.%s\n", dim, reset)
 			continue
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -275,4 +284,52 @@ func (r *REPL) apiKeyCmd() {
 		return
 	}
 	fmt.Fprintf(r.out, "  %s✓ key accepted (%d models available)%s\n", green, len(ids), reset)
+}
+
+// apiKeySetCmd saves a key to the env file, applies it to this session, then verifies it.
+func (r *REPL) apiKeySetCmd(key string) {
+	if r.saveKey == nil {
+		fmt.Fprintf(r.out, "%ssaving keys is not available%s\n", red, reset)
+		return
+	}
+	if key == "" {
+		fmt.Fprint(r.out, "  paste API key (hidden): ")
+		key = strings.TrimSpace(r.readHidden())
+		fmt.Fprintln(r.out)
+	}
+	if key == "" || strings.ContainsAny(key, " \t\r\n") {
+		fmt.Fprintf(r.out, "  %s✗ empty or invalid key, nothing saved%s\n", red, reset)
+		return
+	}
+	path, err := r.saveKey(key)
+	if err != nil {
+		fmt.Fprintf(r.out, "  %s✗ save failed: %v%s\n", red, err, reset)
+		return
+	}
+	r.agent.SetAPIKey(key)
+	r.keySource = path
+	if len(key) <= 10 {
+		r.keyMasked = strings.Repeat("*", len(key))
+	} else {
+		r.keyMasked = key[:4] + strings.Repeat("*", 8) + key[len(key)-4:]
+	}
+	fmt.Fprintf(r.out, "  %s✓ saved to %s (mode 600)%s\n", green, path, reset)
+	if os.Getenv("KODINGIN_API_KEY") != "" && os.Getenv("KODINGIN_API_KEY") != key {
+		fmt.Fprintf(r.out, "  %snote: env KODINGIN_API_KEY is set and wins on next start; unset it to use the saved key%s\n", yellow, reset)
+	}
+	r.apiKeyCmd()
+}
+
+// readHidden turns off terminal echo while reading one line (no-op echo if not a TTY).
+func (r *REPL) readHidden() string {
+	off := exec.Command("stty", "-echo")
+	off.Stdin = os.Stdin
+	hidden := off.Run() == nil
+	line, _ := r.in.ReadString('\n')
+	if hidden {
+		on := exec.Command("stty", "echo")
+		on.Stdin = os.Stdin
+		_ = on.Run()
+	}
+	return line
 }
