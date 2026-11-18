@@ -2,6 +2,12 @@
 
 Versions follow Semantic Versioning. Commit messages follow Conventional Commits.
 
+## 0.4.0 (2026-11-18)
+
+- Scroll the output with the mouse wheel, Shift+↑/↓ (or ↑/↓ while the input is empty), Page Up/Down and Ctrl+Home. Esc or Ctrl+End jumps back to the latest output.
+- While scrolled up, the divider shows how many lines are below; new output no longer pulls the view down.
+- Mouse capture takes over click-and-drag selection (hold Option in iTerm2 or Fn in Terminal.app to select). Set `KODINGIN_NO_MOUSE=1` to turn it off.
+
 ## 0.3.0 (2026-11-18)
 
 - Conversations are saved after each turn to `~/.config/kodingin/sessions/` (mode 600).
