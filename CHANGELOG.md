@@ -2,6 +2,13 @@
 
 Versions follow Semantic Versioning. Commit messages follow Conventional Commits.
 
+## 0.4.1 (2026-11-18)
+
+- Release discarded conversation memory when clearing, compacting, restoring, or trimming interrupted tool calls.
+- Bound terminal scrollback to 256 KiB while preserving UTF-8, terminal escape boundaries, and scroll position.
+- Capture at most 64 KiB of command output, drain the remainder, and report truncation.
+- Close HTTP response bodies on retry cancellation and skip the wait after the final attempt.
+
 ## 0.4.0 (2026-11-18)
 
 - Scroll the output with the mouse wheel, Shift+↑/↓ (or ↑/↓ while the input is empty), Page Up/Down and Ctrl+Home. Esc or Ctrl+End jumps back to the latest output.
