@@ -29,7 +29,13 @@ func (r *REPL) runPinned() error {
 	session.banner()
 	_, noColor := os.LookupEnv("NO_COLOR")
 	m := newPinned(banner.String(), !noColor)
-	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout), tea.WithAltScreen())
+	opts := []tea.ProgramOption{tea.WithContext(ctx), tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout), tea.WithAltScreen()}
+	// Mouse capture enables wheel scrolling but takes over click-and-drag selection
+	// (most terminals still select with Option/Shift held). KODINGIN_NO_MOUSE=1 turns it off.
+	if os.Getenv("KODINGIN_NO_MOUSE") == "" {
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
+	p := tea.NewProgram(m, opts...)
 	session.out = transcriptWriter{send: p.Send}
 	m.run = func(ctx context.Context, line string) bool {
 		session.prompt = func(label string, hidden bool) (string, error) {
@@ -130,7 +136,20 @@ func (m *pinned) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		return m, m.composer.Focus()
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionPress {
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
+				m.transcript.ScrollUp(wheelLines)
+			case tea.MouseButtonWheelDown:
+				m.transcript.ScrollDown(wheelLines)
+			}
+		}
+		return m, nil
 	case tea.KeyMsg:
+		if m.scrollKey(msg) {
+			return m, nil
+		}
 		switch msg.Type {
 		case tea.KeyPgUp:
 			m.transcript.ScrollUp(max(1, m.transcript.Height))
@@ -178,6 +197,42 @@ func (m *pinned) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.editComposer(msg)
 	}
 	return m, nil
+}
+
+const wheelLines = 3
+
+// scrollKey handles line scrolling and jumps. Plain ↑/↓ scroll only while the input is
+// empty, so they still move the cursor inside a multi-line prompt.
+func (m *pinned) scrollKey(msg tea.KeyMsg) bool {
+	idle := m.request == nil && m.composer.Value() == "" && m.continuation.Len() == 0
+	switch msg.String() {
+	case "shift+up", "alt+up", "ctrl+up":
+		m.transcript.ScrollUp(1)
+	case "shift+down", "alt+down", "ctrl+down":
+		m.transcript.ScrollDown(1)
+	case "up":
+		if !idle {
+			return false
+		}
+		m.transcript.ScrollUp(1)
+	case "down":
+		if !idle {
+			return false
+		}
+		m.transcript.ScrollDown(1)
+	case "ctrl+home":
+		m.transcript.GotoTop()
+	case "ctrl+end":
+		m.transcript.GotoBottom()
+	case "esc":
+		if m.transcript.AtBottom() {
+			return false
+		}
+		m.transcript.GotoBottom()
+	default:
+		return false
+	}
+	return true
 }
 
 func (m *pinned) editInput(msg tea.Msg) tea.Cmd {
@@ -339,6 +394,15 @@ func (m *pinned) View() string {
 		return divider + "\n" + footer
 	}
 	m.transcript.Height = transcriptHeight
+	if below := m.transcript.TotalLineCount() - m.transcript.YOffset - transcriptHeight; below > 0 {
+		hint := fmt.Sprintf("─ ↓ %d more lines · Esc to jump to latest ", below)
+		if ansi.StringWidth(hint) < width {
+			divider = hint + strings.Repeat("─", width-ansi.StringWidth(hint))
+			if m.color {
+				divider = yellow + divider + reset
+			}
+		}
+	}
 	return m.transcript.View() + "\n" + divider + "\n" + footer
 }
 

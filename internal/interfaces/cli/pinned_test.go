@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -146,5 +147,66 @@ func TestTerminalText(t *testing.T) {
 		if got := terminalText(text, tt.color); got != tt.want {
 			t.Errorf("color=%v: terminalText = %q, want %q", tt.color, got, tt.want)
 		}
+	}
+}
+
+func TestPinnedScroll(t *testing.T) {
+	newView := func() *pinned {
+		m := newPinned("", false)
+		m.ctx = context.Background()
+		m.Init()
+		m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+		for i := range 100 {
+			m.appendOutput(fmt.Sprintf("line %d\n", i))
+		}
+		m.View()
+		return m
+	}
+	wheel := func(b tea.MouseButton) tea.MouseMsg {
+		return tea.MouseMsg{Action: tea.MouseActionPress, Button: b}
+	}
+	for _, tt := range []struct {
+		name      string
+		draft     string
+		keys      []tea.Msg
+		atBottom  bool
+		offsetMin int // lines scrolled up from bottom, at least
+		hint      bool
+	}{
+		{"follows output", "", nil, true, 0, false},
+		{"wheel up", "", []tea.Msg{wheel(tea.MouseButtonWheelUp)}, false, wheelLines, true},
+		{"wheel up then down", "", []tea.Msg{wheel(tea.MouseButtonWheelUp), wheel(tea.MouseButtonWheelDown)}, true, 0, false},
+		{"shift up", "", []tea.Msg{tea.KeyMsg{Type: tea.KeyShiftUp}}, false, 1, true},
+		{"arrow up when idle", "", []tea.Msg{tea.KeyMsg{Type: tea.KeyUp}}, false, 1, true},
+		{"arrow up while typing edits instead", "draft", []tea.Msg{tea.KeyMsg{Type: tea.KeyUp}}, true, 0, false},
+		{"page up then esc", "", []tea.Msg{tea.KeyMsg{Type: tea.KeyPgUp}, tea.KeyMsg{Type: tea.KeyEsc}}, true, 0, false},
+		{"ctrl+home", "", []tea.Msg{tea.KeyMsg{Type: tea.KeyCtrlHome}}, false, 80, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newView()
+			m.composer.SetValue(tt.draft)
+			bottom := m.transcript.YOffset
+			for _, k := range tt.keys {
+				m.Update(k)
+			}
+			view := m.View()
+			if m.transcript.AtBottom() != tt.atBottom || bottom-m.transcript.YOffset < tt.offsetMin {
+				t.Fatalf("atBottom=%v offset=%d (bottom %d)", m.transcript.AtBottom(), m.transcript.YOffset, bottom)
+			}
+			if strings.Contains(view, "more lines") != tt.hint {
+				t.Fatalf("hint shown = %v:\n%s", !tt.hint, view)
+			}
+			if m.composer.Value() != tt.draft {
+				t.Fatalf("draft changed to %q", m.composer.Value())
+			}
+		})
+	}
+	// New output while scrolled up must not yank the view to the bottom.
+	m := newView()
+	m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	off := m.transcript.YOffset
+	m.Update(transcriptText("more output\n"))
+	if m.transcript.YOffset != off {
+		t.Fatalf("view jumped from %d to %d", off, m.transcript.YOffset)
 	}
 }
