@@ -2,6 +2,14 @@
 
 Versions follow Semantic Versioning. Commit messages follow Conventional Commits.
 
+## 0.3.0 (2026-11-18)
+
+- Conversations are saved after each turn to `~/.config/kodingin/sessions/` (mode 600).
+- `/resume` lists recent sessions; `/resume <n>` continues one and shows where you left off. `kodingin -continue` resumes the newest at startup.
+- `/compact [focus]` replaces the history with model-written handover notes to free context. The history is kept if the summary fails or is not smaller.
+- `/clear` starts a new session; the previous one stays saved.
+- Resumed sessions with an interrupted tool call are trimmed so the model accepts them.
+
 ## 0.2.0 (2026-11-18)
 
 - `/usage` shows tokens per model for this session (input, cached, output) and today / 7 days / 30 days from `~/.config/kodingin/usage.jsonl`.
