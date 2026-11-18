@@ -13,3 +13,10 @@ type Usage struct{ PromptTokens, CompletionTokens int }
 type Client interface {
 	Complete(ctx context.Context, msgs []conversation.Message, tools []tool.Tool) (conversation.Message, Usage, error)
 }
+
+// ModelSelector is implemented by clients that can switch models at runtime.
+type ModelSelector interface {
+	Model() string
+	SetModel(model string)
+	ListModels(ctx context.Context) ([]string, error)
+}

@@ -145,3 +145,40 @@ func truncate(s string) string {
 	}
 	return s
 }
+
+func (c *Client) Model() string     { return c.model }
+func (c *Client) SetModel(m string) { c.model = m }
+
+// ListModels calls GET /models.
+func (c *Client) ListModels(ctx context.Context) ([]string, error) {
+	hr, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	hr.Header.Set("Authorization", "Bearer "+c.apiKey)
+	resp, err := c.http.Do(hr)
+	if err != nil {
+		return nil, fmt.Errorf("list models: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var r struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return nil, fmt.Errorf("list models http %d: %s", resp.StatusCode, truncate(string(raw)))
+	}
+	if r.Error != nil {
+		return nil, fmt.Errorf("list models: %s", r.Error.Message)
+	}
+	ids := make([]string, 0, len(r.Data))
+	for _, d := range r.Data {
+		ids = append(ids, d.ID)
+	}
+	return ids, nil
+}

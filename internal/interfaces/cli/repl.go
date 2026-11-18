@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/thisham/kodingin/internal/application"
 	"github.com/thisham/kodingin/internal/domain/conversation"
@@ -46,7 +47,7 @@ func (r *REPL) banner() {
 	fmt.Fprintf(r.out, "%s%s ┌─ kodingin ─────────────────────────────%s\n", bold, mag, reset)
 	fmt.Fprintf(r.out, "%s%s │%s model   %s\n", bold, mag, reset, r.model)
 	fmt.Fprintf(r.out, "%s%s │%s workdir %s\n", bold, mag, reset, r.workdir)
-	fmt.Fprintf(r.out, "%s%s └─%s %s/help /clear /yolo /exit · Ctrl-C cancels a turn%s\n\n", bold, mag, reset, dim, reset)
+	fmt.Fprintf(r.out, "%s%s └─%s %s/help /model /clear /yolo /exit · Ctrl-C cancels a turn%s\n\n", bold, mag, reset, dim, reset)
 }
 
 // RunOnce executes a single prompt non-interactively.
@@ -68,6 +69,10 @@ func (r *REPL) Run() error {
 			return nil
 		}
 		line = strings.TrimSpace(line)
+		if line == "/model" || strings.HasPrefix(line, "/model ") {
+			r.modelCmd(strings.TrimSpace(strings.TrimPrefix(line, "/model")))
+			continue
+		}
 		switch line {
 		case "":
 			continue
@@ -82,7 +87,7 @@ func (r *REPL) Run() error {
 			fmt.Fprintf(r.out, "%sauto-approve: %v%s\n", yellow, r.autoApprove, reset)
 			continue
 		case "/help":
-			fmt.Fprintf(r.out, "%s/clear  reset conversation\n/yolo   toggle auto-approve for writes and shell\n/exit   quit\nEnd a line with \\ to continue on the next line.%s\n", dim, reset)
+			fmt.Fprintf(r.out, "%s/model [id]  show/list models, or switch to <id>\n/clear  reset conversation\n/yolo   toggle auto-approve for writes and shell\n/exit   quit\nEnd a line with \\ to continue on the next line.%s\n", dim, reset)
 			continue
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -210,4 +215,35 @@ func summarize(args string) string {
 		}
 	}
 	return ""
+}
+
+// modelCmd: "/model" lists available models (current marked); "/model <id>" switches.
+func (r *REPL) modelCmd(arg string) {
+	sel, ok := r.agent.Models()
+	if !ok {
+		fmt.Fprintf(r.out, "%smodel switching not supported by this client%s\n", red, reset)
+		return
+	}
+	if arg != "" {
+		sel.SetModel(arg)
+		r.model = arg
+		fmt.Fprintf(r.out, "%smodel → %s%s\n", yellow, arg, reset)
+		return
+	}
+	fmt.Fprintf(r.out, "%scurrent: %s%s\n", bold, sel.Model(), reset)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	ids, err := sel.ListModels(ctx)
+	if err != nil {
+		fmt.Fprintf(r.out, "%s✗ %v%s\n", red, err, reset)
+		return
+	}
+	for _, id := range ids {
+		mark := "  "
+		if id == sel.Model() {
+			mark = green + "● " + reset
+		}
+		fmt.Fprintf(r.out, "%s%s\n", mark, id)
+	}
+	fmt.Fprintf(r.out, "%sswitch with /model <id>%s\n", dim, reset)
 }

@@ -82,3 +82,9 @@ func (a *Agent) runTool(ctx context.Context, call conversation.ToolCall, obs Obs
 	}
 	return out
 }
+
+// Models exposes model switching when the LLM adapter supports it.
+func (a *Agent) Models() (llm.ModelSelector, bool) {
+	s, ok := a.llm.(llm.ModelSelector)
+	return s, ok
+}
