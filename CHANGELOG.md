@@ -2,6 +2,13 @@
 
 Versions follow Semantic Versioning. Commit messages follow Conventional Commits.
 
+## 0.2.0 (2026-11-18)
+
+- `/usage` shows tokens per model for this session (input, cached, output) and today / 7 days / 30 days from `~/.config/kodingin/usage.jsonl`.
+- `/usage-credit` shows account spend, budget limits and the token package from the tokenizer.id portal. It needs a portal browser session: `/usage-credit login` saves the Cookie only after the portal accepts it, and `/usage-credit logout` removes it.
+- `/history [n]` lists recent prompts across sessions from `~/.config/kodingin/history.jsonl`. Slash commands are never recorded.
+- Cached prompt tokens are read from API responses.
+
 ## 0.1.1 (2026-11-18)
 
 - Pinned full-screen terminal UI with scrollable transcript and a fixed input box.
