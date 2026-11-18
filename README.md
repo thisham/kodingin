@@ -12,7 +12,7 @@ CLI coding agent for Go/DDD projects, backed by `https://tokenizer.id/v1` (OpenA
     ./kodingin -C . -p "add a User aggregate"  # one shot
     ./kodingin -yes ...                        # auto-approve writes/shell
 
-REPL: `/help`, `/status`, `/history [n]`, `/usage`, `/usage-credit [login|logout]`, `/version`, `/model [id]`, `/setup`, `/api-key`, `/api-key-set`, `/clear`, `/yolo`, `/exit`. In interactive terminals, Enter submits and Alt+Enter or Ctrl-J inserts a newline; Ctrl-C cancels a turn. `/setup` modifies the saved endpoint and model in `~/.config/kodingin/env`; restart to apply. `/clear` resets conversation and session usage.
+REPL: `/help`, `/status`, `/resume [n]`, `/compact [focus]`, `/history [n]`, `/usage`, `/usage-credit [login|logout]`, `/version`, `/model [id]`, `/setup`, `/api-key`, `/api-key-set`, `/clear`, `/yolo`, `/exit`. In interactive terminals, Enter submits and Alt+Enter or Ctrl-J inserts a newline; Ctrl-C cancels a turn. `/setup` modifies the saved endpoint and model in `~/.config/kodingin/env`; restart to apply. `/clear` resets conversation and session usage.
 
 In an interactive terminal, the REPL opens a full-screen transcript with the input pinned at the bottom. Use Page Up and Page Down to scroll, or Ctrl-D on an empty prompt to exit. Tool approvals and hidden API-key entry appear on the bottom row. Piped input, redirected output, and `TERM=dumb` use the line-based REPL.
 
@@ -40,4 +40,14 @@ Commit messages follow **Conventional Commits** and releases follow **Semantic V
 ## Prompt history
 
 `/history` lists your 20 most recent prompts across sessions (`/history 50` for more), newest last with the latest numbered 1, showing when and, if different from the current one, in which workspace. Prompts sent to the model are appended to `~/.config/kodingin/history.jsonl` (mode 600). Slash commands, including `/api-key-set` and `/usage-credit`, are never recorded. Prompts are stored as typed, so avoid pasting secrets into them.
+
+## Sessions
+
+Every conversation is saved after each turn to `~/.config/kodingin/sessions/<id>.json` (mode 600).
+
+- `/resume` lists recent sessions (title from the first prompt, when, turns, and the workspace if it differs). `/resume <n>` continues one and shows the last prompt and answer. `kodingin -continue` resumes the newest session at startup.
+- `/clear` starts a new conversation; the previous one stays saved.
+- `/compact [focus]` asks the model for handover notes (goals, decisions, files changed, current state, next steps) and replaces the history with them, freeing context. Add a focus to stress something, for example `/compact the failing tests`. If the summary is not smaller than the history, the history is kept.
+
+A resumed session keeps working in the current `-C` folder and with the current model; kodingin notes when either differs from the original.
 

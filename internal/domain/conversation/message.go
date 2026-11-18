@@ -54,3 +54,60 @@ func (c *Conversation) Messages() []Message {
 
 // Reset keeps only the system prompt.
 func (c *Conversation) Reset() { c.messages = c.messages[:1] }
+
+// Restore replaces the history with msgs, keeping this conversation's own system prompt.
+// Saved system messages are dropped and a dangling tool call (an interrupted turn) is trimmed,
+// so the result is always a valid request for the model.
+func (c *Conversation) Restore(msgs []Message) {
+	c.messages = c.messages[:1]
+	for _, m := range msgs {
+		if m.Role != RoleSystem {
+			c.messages = append(c.messages, m)
+		}
+	}
+	c.trimDangling()
+}
+
+// Compact replaces the history with a summary of it.
+func (c *Conversation) Compact(summary string) {
+	c.messages = append(c.messages[:1], Message{Role: RoleUser, Content: CompactPrefix + summary})
+}
+
+// CompactPrefix marks a message that stands in for compacted history.
+const CompactPrefix = "[Summary of the earlier conversation, compacted to save context]\n\n"
+
+// Len counts messages excluding the system prompt.
+func (c *Conversation) Len() int { return len(c.messages) - 1 }
+
+// trimDangling drops a trailing assistant tool call whose results never arrived.
+func (c *Conversation) trimDangling() {
+	for {
+		last := len(c.messages) - 1
+		if last < 1 {
+			return
+		}
+		// Walk back over tool results to the assistant message that requested them.
+		i := last
+		for i > 0 && c.messages[i].Role == RoleTool {
+			i--
+		}
+		a := c.messages[i]
+		if a.Role != RoleAssistant || len(a.ToolCalls) == 0 {
+			return
+		}
+		answered := map[string]bool{}
+		for _, m := range c.messages[i+1:] {
+			answered[m.ToolCallID] = true
+		}
+		complete := true
+		for _, tc := range a.ToolCalls {
+			if !answered[tc.ID] {
+				complete = false
+			}
+		}
+		if complete {
+			return
+		}
+		c.messages = c.messages[:i]
+	}
+}

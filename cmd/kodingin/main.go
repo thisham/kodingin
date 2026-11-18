@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/thisham/kodingin/internal/infrastructure/historystore"
 	llmadapter "github.com/thisham/kodingin/internal/infrastructure/llm"
 	"github.com/thisham/kodingin/internal/infrastructure/portal"
+	"github.com/thisham/kodingin/internal/infrastructure/sessionstore"
 	"github.com/thisham/kodingin/internal/infrastructure/tools"
 	"github.com/thisham/kodingin/internal/infrastructure/usagestore"
 	"github.com/thisham/kodingin/internal/interfaces/cli"
@@ -27,6 +29,7 @@ func main() {
 	model := flag.String("model", cfg.Model, "model id")
 	yolo := flag.Bool("yes", false, "auto-approve writes and shell commands")
 	prompt := flag.String("p", "", "run a single prompt and exit")
+	cont := flag.Bool("continue", false, "resume the most recent session")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 	if *showVersion {
@@ -59,6 +62,12 @@ func main() {
 	}
 	if path, err := config.HistoryFilePath(); err == nil {
 		ui.SetHistoryStore(historystore.New(path), path)
+	}
+	if dir, err := config.SessionsDir(); err == nil {
+		ui.SetSessionStore(sessionstore.New(dir))
+	}
+	if *cont {
+		ui.ResumeLatest(context.Background())
 	}
 	ui.SetCreditSource(portal.New(cfg.BaseURL, cfg.PortalCookie))
 	ui.SetSettingsSaver(func(settings map[string]string) (string, error) {

@@ -17,6 +17,7 @@ import (
 	"github.com/thisham/kodingin/internal/domain/conversation"
 	"github.com/thisham/kodingin/internal/domain/history"
 	"github.com/thisham/kodingin/internal/domain/llm"
+	"github.com/thisham/kodingin/internal/domain/session"
 	"github.com/thisham/kodingin/internal/domain/usage"
 	"github.com/thisham/kodingin/internal/version"
 )
@@ -57,6 +58,12 @@ type REPL struct {
 	historyRepo     history.Repository
 	historyPath     string
 	historyWarned   bool
+	sessRepo        session.Repository
+	sessID          string
+	sessCreated     time.Time
+	sessWarned      bool
+	sessTitle       string
+	startNotice     string // output of -continue, shown under the banner
 }
 
 // SetKeySaver injects how /api-key-set persists a key (infrastructure concern).
@@ -79,6 +86,9 @@ func (r *REPL) banner() {
 	fmt.Fprintf(r.out, "  %sGo coding agent · explore, edit, verify%s\n\n", dim, reset)
 	r.status()
 	fmt.Fprintf(r.out, "\n  %s/help for commands · trailing \\ for multiline · Ctrl-C cancels a turn%s\n\n", dim, reset)
+	if r.startNotice != "" {
+		fmt.Fprint(r.out, r.startNotice)
+	}
 }
 
 func (r *REPL) status() {
@@ -90,7 +100,7 @@ func (r *REPL) status() {
 }
 
 func (r *REPL) help() {
-	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Reset conversation and token counts\n  /status            Show model, workspace, approvals and usage\n  /history [n]       Recent prompts across sessions (default 20)\n  /usage             Token usage this session and saved history\n  /usage-credit      Account credit and limits (login|logout)\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /setup             Configure the saved endpoint and model\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  Enter sends. Alt+Enter or Ctrl-J inserts a newline.\n  End a line with \\ to continue on the next line. Ctrl-C cancels; Ctrl-D exits.\n\n", bold, reset, bold, reset, bold, reset)
+	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Start a new conversation (the old one stays saved)\n  /resume [n]        List saved sessions or continue one\n  /compact [focus]   Summarise the conversation to free context\n  /status            Show model, workspace, approvals and usage\n  /history [n]       Recent prompts across sessions (default 20)\n  /usage             Token usage this session and saved history\n  /usage-credit      Account credit and limits (login|logout)\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /setup             Configure the saved endpoint and model\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  Enter sends. Alt+Enter or Ctrl-J inserts a newline.\n  End a line with \\ to continue on the next line. Ctrl-C cancels; Ctrl-D exits.\n\n", bold, reset, bold, reset, bold, reset)
 }
 
 func (r *REPL) beginTurn() {
@@ -105,6 +115,7 @@ func (r *REPL) RunOnce(prompt string) error {
 	r.recordPrompt(prompt)
 	r.beginTurn()
 	err := r.agent.Ask(ctx, prompt, r)
+	r.saveSession()
 	r.footer()
 	return err
 }
@@ -140,6 +151,14 @@ func (r *REPL) handleLine(ctx context.Context, line string) (exit bool) {
 		r.apiKeySetCmd(ctx, strings.TrimSpace(strings.TrimPrefix(line, "/api-key-set")))
 		return false
 	}
+	if line == "/resume" || strings.HasPrefix(line, "/resume ") {
+		r.resumeCmd(ctx, strings.TrimSpace(strings.TrimPrefix(line, "/resume")))
+		return false
+	}
+	if line == "/compact" || strings.HasPrefix(line, "/compact ") {
+		r.compactCmd(ctx, strings.TrimSpace(strings.TrimPrefix(line, "/compact")))
+		return false
+	}
 	if line == "/history" || strings.HasPrefix(line, "/history ") {
 		r.historyCmd(ctx, strings.TrimSpace(strings.TrimPrefix(line, "/history")))
 		return false
@@ -161,6 +180,7 @@ func (r *REPL) handleLine(ctx context.Context, line string) (exit bool) {
 		r.agent.Reset()
 		r.tokIn, r.tokOut = 0, 0
 		r.sessionUsage = nil
+		r.newSession()
 		fmt.Fprintf(r.out, "%sconversation cleared%s\n", dim, reset)
 		return false
 	case "/api-key":
@@ -196,6 +216,7 @@ func (r *REPL) handleLine(ctx context.Context, line string) (exit bool) {
 	if err := r.agent.Ask(ctx, line, r); err != nil {
 		fmt.Fprintf(r.out, "%s✗ %v%s\n", red, err, reset)
 	}
+	r.saveSession()
 	r.footer()
 	return false
 }

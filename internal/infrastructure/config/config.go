@@ -156,3 +156,12 @@ func HistoryFilePath() (string, error) {
 	}
 	return filepath.Join(home, ".config", "kodingin", "history.jsonl"), nil
 }
+
+// SessionsDir is where saved conversations live, one file per session.
+func SessionsDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "kodingin", "sessions"), nil
+}
