@@ -53,13 +53,15 @@ func (c *Conversation) Messages() []Message {
 }
 
 // Reset keeps only the system prompt.
-func (c *Conversation) Reset() { c.messages = c.messages[:1] }
+func (c *Conversation) Reset() {
+	c.messages = []Message{c.messages[0]}
+}
 
 // Restore replaces the history with msgs, keeping this conversation's own system prompt.
 // Saved system messages are dropped and a dangling tool call (an interrupted turn) is trimmed,
 // so the result is always a valid request for the model.
 func (c *Conversation) Restore(msgs []Message) {
-	c.messages = c.messages[:1]
+	c.Reset()
 	for _, m := range msgs {
 		if m.Role != RoleSystem {
 			c.messages = append(c.messages, m)
@@ -70,7 +72,7 @@ func (c *Conversation) Restore(msgs []Message) {
 
 // Compact replaces the history with a summary of it.
 func (c *Conversation) Compact(summary string) {
-	c.messages = append(c.messages[:1], Message{Role: RoleUser, Content: CompactPrefix + summary})
+	c.messages = []Message{c.messages[0], {Role: RoleUser, Content: CompactPrefix + summary}}
 }
 
 // CompactPrefix marks a message that stands in for compacted history.
@@ -108,6 +110,7 @@ func (c *Conversation) trimDangling() {
 		if complete {
 			return
 		}
+		clear(c.messages[i:])
 		c.messages = c.messages[:i]
 	}
 }

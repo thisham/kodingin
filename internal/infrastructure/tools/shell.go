@@ -1,19 +1,44 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"time"
 )
+
+const maxCommandOutput = 64 * 1024
+
+// cappedOutput keeps a prefix while draining both output streams to completion.
+// exec.Cmd serializes writes when Stdout and Stderr share the same writer.
+type cappedOutput struct {
+	buf       bytes.Buffer
+	discarded int64
+}
+
+func (b *cappedOutput) Write(p []byte) (int, error) {
+	n := len(p)
+	keep := min(n, maxCommandOutput-b.buf.Len())
+	b.buf.Write(p[:keep])
+	b.discarded += int64(n - keep)
+	return n, nil
+}
 
 func run(ctx context.Context, dir string, timeout time.Duration, name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	var out cappedOutput
+	cmd.Stdout, cmd.Stderr = &out, &out
+	err := cmd.Run()
+	text := out.buf.String()
+	if out.discarded > 0 {
+		text += fmt.Sprintf("\n...[truncated %d bytes]", out.discarded)
+	}
+	return text, err
 }
 
 // ---- grep

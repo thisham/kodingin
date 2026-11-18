@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -99,7 +100,7 @@ func newPinned(banner string, color bool) *pinned {
 	// (terminals cannot report Shift+Enter). Unbind the textarea's own newline key.
 	composer.KeyMap.InsertNewline.SetEnabled(false)
 	m := &pinned{input: textinput.New(), composer: composer, transcript: viewport.New(0, 0), color: color}
-	m.output.WriteString(terminalText(banner, color))
+	m.appendOutput(banner)
 	return m
 }
 
@@ -326,9 +327,35 @@ func (m *pinned) submit() tea.Cmd {
 	return func() tea.Msg { return turnDone(m.run(ctx, line)) }
 }
 
+// Keep recent scrollback bounded, trimming in chunks to avoid copying on every write.
+const maxTranscriptBytes = 256 * 1024
+
 func (m *pinned) appendOutput(text string) {
 	follow := m.transcript.AtBottom()
 	m.output.WriteString(terminalText(text, m.color))
+	if m.output.Len() > maxTranscriptBytes {
+		output := m.output.String()
+		cut := len(output) - maxTranscriptBytes*3/4
+		// Prefer a line boundary, but also handle a single oversized line.
+		if newline := strings.IndexByte(output[cut:], '\n'); newline >= 0 && newline < 4096 {
+			cut += newline + 1
+		}
+		for cut < len(output) && !utf8.RuneStart(output[cut]) {
+			cut++
+		}
+		// terminalText permits only SGR escapes; never retain a partial one.
+		if start := strings.LastIndexByte(output[:cut], '\x1b'); start >= 0 {
+			if end := strings.IndexByte(output[start:], 'm'); end >= 0 && start+end >= cut {
+				cut = start + end + 1
+			}
+		}
+		if !follow && m.width > 0 {
+			dropped := strings.Count(ansi.Hardwrap(output[:cut], m.transcript.Width, true), "\n")
+			m.transcript.YOffset = max(0, m.transcript.YOffset-dropped)
+		}
+		m.output.Reset()
+		m.output.WriteString(output[cut:])
+	}
 	m.refreshTranscript(follow)
 }
 

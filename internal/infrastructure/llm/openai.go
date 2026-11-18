@@ -100,27 +100,42 @@ func (c *Client) Complete(ctx context.Context, msgs []conversation.Message, tool
 		err  error
 	)
 	for attempt := 0; attempt < 3; attempt++ {
-		hr, _ := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+		hr, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+		if requestErr != nil {
+			return conversation.Message{}, domainllm.Usage{}, fmt.Errorf("llm request: %w", requestErr)
+		}
 		hr.Header.Set("Content-Type", "application/json")
 		hr.Header.Set("Authorization", "Bearer "+c.apiKey)
 		resp, err = c.http.Do(hr)
 		if err == nil && resp.StatusCode != 429 && resp.StatusCode < 500 {
 			break
 		}
-		if err == nil && attempt < 2 {
+		// The final response is handled below, where its body is always closed.
+		if attempt == 2 {
+			break
+		}
+		if err == nil {
 			resp.Body.Close()
 		}
+		timer := time.NewTimer(time.Duration(attempt+1) * 2 * time.Second)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return conversation.Message{}, domainllm.Usage{}, ctx.Err()
-		case <-time.After(time.Duration(attempt+1) * 2 * time.Second):
+		case <-timer.C:
 		}
 	}
 	if err != nil {
 		return conversation.Message{}, domainllm.Usage{}, fmt.Errorf("llm request: %w", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	if err := ctx.Err(); err != nil {
+		return conversation.Message{}, domainllm.Usage{}, err
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return conversation.Message{}, domainllm.Usage{}, fmt.Errorf("read llm response: %w", err)
+	}
 
 	var r response
 	if err := json.Unmarshal(raw, &r); err != nil {
