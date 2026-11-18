@@ -51,6 +51,9 @@ func main() {
 	ui := cli.New(agent, *model, root, *yolo)
 	ui.SetKeyInfo(cfg.MaskedKey(), cfg.APIKeySource, cfg.BaseURL)
 	ui.SetKeySaver(config.SaveAPIKey)
+	ui.SetSettingsSaver(func(settings map[string]string) (string, error) {
+		return config.SaveSettings(settings)
+	})
 
 	if p := strings.TrimSpace(*prompt + " " + strings.Join(flag.Args(), " ")); p != "" {
 		err = ui.RunOnce(p)

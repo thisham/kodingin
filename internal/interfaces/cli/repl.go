@@ -43,12 +43,17 @@ type REPL struct {
 	keySource       string
 	baseURL         string
 	saveKey         func(key string) (string, error)
+	saveSettings    func(map[string]string) (string, error)
 	turnIn, turnOut int
 	turnStarted     time.Time
+	prompt          func(label string, hidden bool) (string, error)
 }
 
 // SetKeySaver injects how /api-key-set persists a key (infrastructure concern).
 func (r *REPL) SetKeySaver(f func(string) (string, error)) { r.saveKey = f }
+
+// SetSettingsSaver injects persistence for /setup configuration changes.
+func (r *REPL) SetSettingsSaver(f func(map[string]string) (string, error)) { r.saveSettings = f }
 
 // SetKeyInfo gives the REPL what /api-key displays. The raw key never reaches the UI.
 func (r *REPL) SetKeyInfo(masked, source, baseURL string) {
@@ -75,7 +80,7 @@ func (r *REPL) status() {
 }
 
 func (r *REPL) help() {
-	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Reset conversation and token counts\n  /status            Show model, workspace, approvals and usage\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  End a line with \\ to continue on the next line.\n  Ctrl-C cancels the current turn. Ctrl-D exits.\n\n", bold, reset, bold, reset, bold, reset)
+	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Reset conversation and token counts\n  /status            Show model, workspace, approvals and usage\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /setup             Configure the saved endpoint and model\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  In a terminal, Enter inserts a newline; Ctrl-J submits.\n  End a line with \\ to continue on the next line. Ctrl-C cancels; Ctrl-D exits.\n\n", bold, reset, bold, reset, bold, reset)
 }
 
 func (r *REPL) beginTurn() {
@@ -94,6 +99,9 @@ func (r *REPL) RunOnce(prompt string) error {
 }
 
 func (r *REPL) Run() error {
+	if interactiveTerminal() {
+		return r.runPinned()
+	}
 	r.banner()
 	for {
 		fmt.Fprintf(r.out, "%s%s❯%s ", bold, green, reset)
@@ -105,55 +113,67 @@ func (r *REPL) Run() error {
 		if err != nil {
 			return fmt.Errorf("read input: %w", err)
 		}
-		line = strings.TrimSpace(line)
-		if line == "/api-key-set" || strings.HasPrefix(line, "/api-key-set ") {
-			r.apiKeySetCmd(strings.TrimSpace(strings.TrimPrefix(line, "/api-key-set")))
-			continue
-		}
-		if line == "/model" || strings.HasPrefix(line, "/model ") {
-			r.modelCmd(strings.TrimSpace(strings.TrimPrefix(line, "/model")))
-			continue
-		}
-		switch line {
-		case "":
-			continue
-		case "/exit", "/quit":
-			return nil
-		case "/clear":
-			r.agent.Reset()
-			r.tokIn, r.tokOut = 0, 0
-			fmt.Fprintf(r.out, "%sconversation cleared%s\n", dim, reset)
-			continue
-		case "/api-key":
-			r.apiKeyCmd()
-			continue
-		case "/yolo":
-			r.autoApprove = !r.autoApprove
-			fmt.Fprintf(r.out, "%sauto-approve: %v%s\n", yellow, r.autoApprove, reset)
-			continue
-		case "/status":
-			r.status()
-			continue
-		case "/version":
-			fmt.Fprintln(r.out, "kodingin v"+version.Current)
-			continue
-		case "/help":
-			r.help()
-			continue
-		}
-		if strings.HasPrefix(line, "/") {
-			fmt.Fprintf(r.out, "%sUnknown command %q. Use /help to see commands.%s\n", yellow, strings.Fields(line)[0], reset)
-			continue
-		}
-		r.beginTurn()
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		fmt.Fprintf(r.out, "%sthinking…%s\n", dim, reset)
-		if err := r.agent.Ask(ctx, line, r); err != nil {
-			fmt.Fprintf(r.out, "%s✗ %v%s\n", red, err, reset)
-		}
+		exit := r.handleLine(ctx, line)
 		stop()
-		r.footer()
+		if exit {
+			return nil
+		}
 	}
+}
+
+// handleLine runs a REPL command or an agent turn using the active terminal's I/O.
+func (r *REPL) handleLine(ctx context.Context, line string) (exit bool) {
+	line = strings.TrimSpace(line)
+	if line == "/api-key-set" || strings.HasPrefix(line, "/api-key-set ") {
+		r.apiKeySetCmd(ctx, strings.TrimSpace(strings.TrimPrefix(line, "/api-key-set")))
+		return false
+	}
+	if line == "/model" || strings.HasPrefix(line, "/model ") {
+		r.modelCmd(ctx, strings.TrimSpace(strings.TrimPrefix(line, "/model")))
+		return false
+	}
+	switch line {
+	case "":
+		return false
+	case "/exit", "/quit":
+		return true
+	case "/clear":
+		r.agent.Reset()
+		r.tokIn, r.tokOut = 0, 0
+		fmt.Fprintf(r.out, "%sconversation cleared%s\n", dim, reset)
+		return false
+	case "/api-key":
+		r.apiKeyCmd(ctx)
+		return false
+	case "/setup":
+		r.setupCmd()
+		return false
+	case "/yolo":
+		r.autoApprove = !r.autoApprove
+		fmt.Fprintf(r.out, "%sauto-approve: %v%s\n", yellow, r.autoApprove, reset)
+		return false
+	case "/status":
+		r.status()
+		return false
+	case "/version":
+		fmt.Fprintln(r.out, "kodingin v"+version.Current)
+		return false
+	case "/help":
+		r.help()
+		return false
+	}
+	if strings.HasPrefix(line, "/") {
+		fmt.Fprintf(r.out, "%sUnknown command %q. Use /help to see commands.%s\n", yellow, strings.Fields(line)[0], reset)
+		return false
+	}
+	r.beginTurn()
+	fmt.Fprintf(r.out, "%sthinking…%s\n", dim, reset)
+	if err := r.agent.Ask(ctx, line, r); err != nil {
+		fmt.Fprintf(r.out, "%s✗ %v%s\n", red, err, reset)
+	}
+	r.footer()
+	return false
 }
 
 // readInput supports multi-line input with trailing backslash.
@@ -216,8 +236,8 @@ func (r *REPL) Approve(c conversation.ToolCall) bool {
 	}
 	r.preview(c)
 	for {
-		fmt.Fprintf(r.out, "  %sAllow %s? [y]es / [N]o / [a]lways:%s ", yellow, c.Name, reset)
-		ans, err := r.in.ReadString('\n')
+		label := fmt.Sprintf("  %sAllow %s? [y]es / [N]o / [a]lways:%s ", yellow, c.Name, reset)
+		ans, err := r.askInput(label, false)
 		if err != nil {
 			return false
 		}
@@ -286,7 +306,7 @@ func summarize(args string) string {
 }
 
 // modelCmd: "/model" lists available models (current marked); "/model <id>" switches.
-func (r *REPL) modelCmd(arg string) {
+func (r *REPL) modelCmd(ctx context.Context, arg string) {
 	sel, ok := r.agent.Models()
 	if !ok {
 		fmt.Fprintf(r.out, "%smodel switching not supported by this client%s\n", red, reset)
@@ -299,7 +319,7 @@ func (r *REPL) modelCmd(arg string) {
 		return
 	}
 	fmt.Fprintf(r.out, "%scurrent: %s%s\n", bold, sel.Model(), reset)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	ids, err := sel.ListModels(ctx)
 	if err != nil {
@@ -317,14 +337,14 @@ func (r *REPL) modelCmd(arg string) {
 }
 
 // apiKeyCmd shows the masked key and verifies it with an authenticated GET /models.
-func (r *REPL) apiKeyCmd() {
+func (r *REPL) apiKeyCmd(ctx context.Context) {
 	fmt.Fprintf(r.out, "  key      %s\n  source   %s\n  endpoint %s\n", r.keyMasked, r.keySource, r.baseURL)
 	sel, ok := r.agent.Models()
 	if !ok {
 		fmt.Fprintf(r.out, "%s  cannot verify: client has no model listing%s\n", yellow, reset)
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	ids, err := sel.ListModels(ctx)
 	if err != nil {
@@ -335,15 +355,17 @@ func (r *REPL) apiKeyCmd() {
 }
 
 // apiKeySetCmd saves a key to the env file, applies it to this session, then verifies it.
-func (r *REPL) apiKeySetCmd(key string) {
+func (r *REPL) apiKeySetCmd(ctx context.Context, key string) {
 	if r.saveKey == nil {
 		fmt.Fprintf(r.out, "%ssaving keys is not available%s\n", red, reset)
 		return
 	}
 	if key == "" {
-		fmt.Fprint(r.out, "  paste API key (hidden): ")
-		key = strings.TrimSpace(r.readHidden())
-		fmt.Fprintln(r.out)
+		value, err := r.askInput("  paste API key (hidden): ", true)
+		if err != nil {
+			return
+		}
+		key = strings.TrimSpace(value)
 	}
 	if key == "" || strings.ContainsAny(key, " \t\r\n") {
 		fmt.Fprintf(r.out, "  %s✗ empty or invalid key, nothing saved%s\n", red, reset)
@@ -365,19 +387,73 @@ func (r *REPL) apiKeySetCmd(key string) {
 	if os.Getenv("KODINGIN_API_KEY") != "" && os.Getenv("KODINGIN_API_KEY") != key {
 		fmt.Fprintf(r.out, "  %snote: env KODINGIN_API_KEY is set and wins on next start; unset it to use the saved key%s\n", yellow, reset)
 	}
-	r.apiKeyCmd()
+	r.apiKeyCmd(ctx)
+}
+
+func (r *REPL) setupCmd() {
+	if r.saveSettings == nil {
+		fmt.Fprintf(r.out, "%sconfiguration saving is not available%s\n", red, reset)
+		return
+	}
+	baseURL, err := r.askInput(fmt.Sprintf("  endpoint [%s]: ", r.baseURL), false)
+	if err != nil {
+		return
+	}
+	model, err := r.askInput(fmt.Sprintf("  model [%s]: ", r.model), false)
+	if err != nil {
+		return
+	}
+	settings := make(map[string]string)
+	if value := strings.TrimSpace(baseURL); value != "" {
+		settings["KODINGIN_BASE_URL"] = value
+	}
+	if value := strings.TrimSpace(model); value != "" {
+		settings["KODINGIN_MODEL"] = value
+	}
+	if len(settings) == 0 {
+		fmt.Fprintf(r.out, "%sno changes%s\n", dim, reset)
+		return
+	}
+	path, err := r.saveSettings(settings)
+	if err != nil {
+		fmt.Fprintf(r.out, "%s✗ save failed: %v%s\n", red, err, reset)
+		return
+	}
+	if value := settings["KODINGIN_BASE_URL"]; value != "" {
+		r.baseURL = value
+	}
+	if value := settings["KODINGIN_MODEL"]; value != "" {
+		r.model = value
+	}
+	fmt.Fprintf(r.out, "%s✓ configuration saved to %s (restart to apply)%s\n", green, path, reset)
+}
+
+func (r *REPL) askInput(label string, hidden bool) (string, error) {
+	if r.prompt != nil {
+		return r.prompt(label, hidden)
+	}
+	fmt.Fprint(r.out, label)
+	if hidden {
+		line, err := r.readHidden()
+		fmt.Fprintln(r.out)
+		if len(line) > 0 {
+			return line, nil
+		}
+		return line, err
+	}
+	return r.in.ReadString('\n')
 }
 
 // readHidden turns off terminal echo while reading one line (no-op echo if not a TTY).
-func (r *REPL) readHidden() string {
+func (r *REPL) readHidden() (string, error) {
 	off := exec.Command("stty", "-echo")
 	off.Stdin = os.Stdin
 	hidden := off.Run() == nil
-	line, _ := r.in.ReadString('\n')
+	line, err := r.in.ReadString('\n')
 	if hidden {
 		on := exec.Command("stty", "echo")
 		on.Stdin = os.Stdin
 		_ = on.Run()
 	}
-	return line
+	return line, err
 }

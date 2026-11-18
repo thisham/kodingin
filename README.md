@@ -12,7 +12,9 @@ CLI coding agent for Go/DDD projects, backed by `https://tokenizer.id/v1` (OpenA
     ./kodingin -C . -p "add a User aggregate"  # one shot
     ./kodingin -yes ...                        # auto-approve writes/shell
 
-REPL: `/help`, `/status`, `/version`, `/model [id]`, `/api-key`, `/api-key-set`, `/clear`, `/yolo`, `/exit`. Use a trailing `\` for multiline input; Ctrl-C cancels a turn. `/clear` resets conversation and session usage.
+REPL: `/help`, `/status`, `/version`, `/model [id]`, `/setup`, `/api-key`, `/api-key-set`, `/clear`, `/yolo`, `/exit`. In interactive terminals, Enter inserts a newline and Ctrl-J submits; Ctrl-C cancels a turn. `/setup` modifies the saved endpoint and model in `~/.config/kodingin/env`; restart to apply. `/clear` resets conversation and session usage.
+
+In an interactive terminal, the REPL opens a full-screen transcript with the input pinned at the bottom. Use Page Up and Page Down to scroll, or Ctrl-D on an empty prompt to exit. Tool approvals and hidden API-key entry appear on the bottom row. Piped input, redirected output, and `TERM=dumb` use the line-based REPL.
 
 The welcome screen shows the version, model, workspace, and approval mode. Each turn reports elapsed time, token usage, and session totals. Tool output uses compact previews. Approval requires `y` (once), `n` (deny, the default), or `a` (auto-approve for the session).
 

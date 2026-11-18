@@ -88,8 +88,12 @@ func EnvFilePath() (string, error) {
 }
 
 // SaveAPIKey writes KODINGIN_API_KEY into the env file (mode 0600), keeping other lines.
-// It writes a temp file and renames it, so a failed write never leaves a half file.
 func SaveAPIKey(key string) (string, error) {
+	return SaveSettings(map[string]string{"KODINGIN_API_KEY": key})
+}
+
+// SaveSettings updates env-file values, preserving unrelated entries.
+func SaveSettings(settings map[string]string) (string, error) {
 	path, err := EnvFilePath()
 	if err != nil {
 		return "", err
@@ -97,18 +101,30 @@ func SaveAPIKey(key string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
+	values := make(map[string]string, len(settings))
+	for key, value := range settings {
+		values[key] = value
+	}
 	var lines []string
 	if b, err := os.ReadFile(path); err == nil {
-		for _, l := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
-			if k, _, ok := strings.Cut(l, "="); ok && strings.TrimSpace(k) == "KODINGIN_API_KEY" {
+		for _, line := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+			key, _, ok := strings.Cut(line, "=")
+			key = strings.TrimSpace(key)
+			if value, update := values[key]; ok && update {
+				lines = append(lines, key+"="+value)
+				delete(values, key)
 				continue
 			}
-			if l != "" {
-				lines = append(lines, l)
+			if line != "" {
+				lines = append(lines, line)
 			}
 		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
 	}
-	lines = append(lines, "KODINGIN_API_KEY="+key)
+	for key, value := range values {
+		lines = append(lines, key+"="+value)
+	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
 		return "", err
