@@ -64,6 +64,7 @@ type REPL struct {
 	sessWarned      bool
 	sessTitle       string
 	startNotice     string // output of -continue, shown under the banner
+	onUsage         func(input, output int)
 }
 
 // SetKeySaver injects how /api-key-set persists a key (infrastructure concern).
@@ -307,6 +308,9 @@ func (r *REPL) OnUsage(u llm.Usage) {
 	r.turnIn += u.PromptTokens
 	r.turnOut += u.CompletionTokens
 	r.recordUsage(u)
+	if r.onUsage != nil {
+		r.onUsage(r.turnIn, r.turnOut)
+	}
 }
 
 func (r *REPL) preview(c conversation.ToolCall) {

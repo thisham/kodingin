@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -39,6 +40,7 @@ func (r *REPL) runPinned() error {
 	p := tea.NewProgram(m, opts...)
 	session.out = transcriptWriter{send: p.Send}
 	m.run = func(ctx context.Context, line string) bool {
+		session.onUsage = func(input, output int) { p.Send(usageUpdate{input: input, output: output}) }
 		session.prompt = func(label string, hidden bool) (string, error) {
 			reply := make(chan string, 1)
 			p.Send(promptRequest{label: label, hidden: hidden, reply: reply})
@@ -74,12 +76,23 @@ type promptRequest struct {
 
 type turnDone bool
 
+type usageUpdate struct{ input, output int }
+type spinnerTick struct{}
+
 type pinned struct {
-	ctx        context.Context
-	run        func(context.Context, string) bool
-	cancelTurn context.CancelFunc
-	request    *promptRequest
-	cancelling bool
+	ctx           context.Context
+	run           func(context.Context, string) bool
+	cancelTurn    context.CancelFunc
+	request       *promptRequest
+	cancelling    bool
+	queued        []string
+	promptHistory []string
+	historyIndex  int
+	historyDraft  string
+	usageIn       int
+	usageOut      int
+	started       time.Time
+	spinner       int
 
 	input        textinput.Model
 	composer     textarea.Model
@@ -131,12 +144,45 @@ func (m *pinned) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case turnDone:
 		m.cancelTurn()
 		m.cancelTurn = nil
+		wasCancelling := m.cancelling
 		m.cancelling = false
-		m.resetInput()
 		if msg {
 			return m, tea.Quit
 		}
+		if wasCancelling {
+			for i := range m.queued {
+				m.queued[i] = ""
+			}
+			m.queued = nil
+			m.resetInput()
+			return m, m.composer.Focus()
+		}
+		if m.request == nil {
+			m.resetInput()
+		}
+		if len(m.queued) > 0 && m.request == nil {
+			next := m.queued[0]
+			m.queued[0] = ""
+			m.queued = m.queued[1:]
+			return m, m.startTurn(next)
+		}
+		if m.request != nil {
+			return m, nil
+		}
+		if len(m.queued) > 0 {
+			next := m.queued[0]
+			m.queued[0] = ""
+			m.queued = m.queued[1:]
+			return m, m.startTurn(next)
+		}
 		return m, m.composer.Focus()
+	case usageUpdate:
+		m.usageIn, m.usageOut = msg.input, msg.output
+	case spinnerTick:
+		if m.cancelTurn != nil {
+			m.spinner = (m.spinner + 1) % len(spinnerFrames)
+			return m, spinnerCmd()
+		}
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionPress {
 			switch msg.Button {
@@ -176,6 +222,10 @@ func (m *pinned) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cancelTurn != nil {
 				m.cancelling = true
 				m.cancelTurn()
+				for i := range m.queued {
+					m.queued[i] = ""
+				}
+				m.queued = nil
 				m.resetInput()
 				m.input.Blur()
 			} else {
@@ -183,6 +233,28 @@ func (m *pinned) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.continuation.Reset()
 				m.resizeInput()
 			}
+		case tea.KeyUp:
+			if m.request == nil && m.historyKey(-1) {
+				return m, nil
+			}
+			if m.request != nil {
+				return m, m.editInput(msg)
+			}
+			if m.composer.Line() == 0 && m.historyIndex > 0 {
+				return m, nil
+			}
+			return m, m.editComposer(msg)
+		case tea.KeyDown:
+			if m.request == nil && m.historyKey(1) {
+				return m, nil
+			}
+			if m.request != nil {
+				return m, m.editInput(msg)
+			}
+			if m.historyIndex < len(m.promptHistory) && m.composer.Line() == m.composer.LineCount()-1 {
+				return m, nil
+			}
+			return m, m.editComposer(msg)
 		case tea.KeyCtrlD:
 			if m.cancelTurn == nil && m.request == nil && m.composer.Value() == "" && m.input.Value() == "" && m.continuation.Len() == 0 {
 				return m, tea.Quit
@@ -218,6 +290,12 @@ func (m *pinned) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 const wheelLines = 3
 
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+func spinnerCmd() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return spinnerTick{} })
+}
+
 // scrollKey handles line scrolling and jumps. Plain ↑/↓ scroll only while the input is
 // empty, so they still move the cursor inside a multi-line prompt.
 func (m *pinned) scrollKey(msg tea.KeyMsg) bool {
@@ -249,6 +327,41 @@ func (m *pinned) scrollKey(msg tea.KeyMsg) bool {
 	default:
 		return false
 	}
+	return true
+}
+
+// historyKey navigates submitted prompts only at the top/bottom of the draft,
+// leaving the textarea's normal up/down cursor movement intact for multiline text.
+func (m *pinned) historyKey(direction int) bool {
+	if direction < 0 && m.composer.Line() != 0 {
+		return false
+	}
+	if direction > 0 && m.composer.Line() != m.composer.LineCount()-1 {
+		return false
+	}
+	if len(m.promptHistory) == 0 {
+		return false
+	}
+	if m.historyIndex == len(m.promptHistory) {
+		m.historyDraft = m.composer.Value()
+	}
+	if direction < 0 {
+		if m.historyIndex == 0 {
+			return true
+		}
+		m.historyIndex--
+		m.composer.SetValue(m.promptHistory[m.historyIndex])
+	} else {
+		if m.historyIndex >= len(m.promptHistory)-1 {
+			m.historyIndex = len(m.promptHistory)
+			m.composer.SetValue(m.historyDraft)
+		} else {
+			m.historyIndex++
+			m.composer.SetValue(m.promptHistory[m.historyIndex])
+		}
+	}
+	m.composer.CursorEnd()
+	m.resizeInput()
 	return true
 }
 
@@ -322,9 +435,12 @@ func (m *pinned) submit() tea.Cmd {
 		m.request.reply <- line
 		m.resetInput()
 		m.input.Blur()
-		return nil
-	}
-	if m.cancelTurn != nil {
+		if m.cancelTurn == nil && len(m.queued) > 0 {
+			next := m.queued[0]
+			m.queued[0] = ""
+			m.queued = m.queued[1:]
+			return m.startTurn(next)
+		}
 		return nil
 	}
 	if prefix, ok := strings.CutSuffix(line, "\\"); ok && !strings.Contains(line, "\n") {
@@ -354,10 +470,35 @@ func (m *pinned) submit() tea.Cmd {
 	}
 	m.appendOutput(green + "❯ " + reset + echo + "\n")
 	m.transcript.GotoBottom()
+	if len(m.promptHistory) == 0 || m.promptHistory[len(m.promptHistory)-1] != line {
+		m.promptHistory = append(m.promptHistory, line)
+		if len(m.promptHistory) > 500 {
+			m.promptHistory = append([]string(nil), m.promptHistory[len(m.promptHistory)-500:]...)
+		}
+	}
+	m.historyIndex = len(m.promptHistory)
+	m.historyDraft = ""
+	if m.cancelTurn != nil {
+		if len(m.queued) >= 100 {
+			m.appendOutput(yellow + "  queue full (100 prompts max)\n" + reset)
+			return nil
+		}
+		m.queued = append(m.queued, line)
+		m.appendOutput(dim + fmt.Sprintf("  queued (%d waiting)\n", len(m.queued)) + reset)
+		m.composer.Focus()
+		return nil
+	}
+	return m.startTurn(line)
+}
+
+func (m *pinned) startTurn(line string) tea.Cmd {
 	ctx, cancel := context.WithCancel(m.ctx)
 	m.cancelTurn = cancel
-	m.composer.Blur()
-	return func() tea.Msg { return turnDone(m.run(ctx, line)) }
+	m.usageIn, m.usageOut = 0, 0
+	m.started = time.Now()
+	m.composer.Focus()
+	work := func() tea.Msg { return turnDone(m.run(ctx, line)) }
+	return tea.Batch(work, spinnerCmd())
 }
 
 // Keep recent scrollback bounded, trimming in chunks to avoid copying on every write.
@@ -424,7 +565,14 @@ func (m *pinned) View() string {
 	case m.cancelling:
 		footer = "Cancelling…"
 	case m.cancelTurn != nil && m.request == nil:
-		footer = "Working… · Ctrl-C to cancel"
+		frame := "⠋"
+		if len(spinnerFrames) > 0 {
+			frame = spinnerFrames[m.spinner%len(spinnerFrames)]
+		}
+		composer := m.composer
+		composer.Prompt = ""
+		status := fmt.Sprintf("%s Working · %s in / %s out tokens · %s elapsed · %d queued · Ctrl-C cancels", frame, compact(m.usageIn), compact(m.usageOut), time.Since(m.started).Round(time.Second), len(m.queued))
+		footer = status + "\n" + m.label() + strings.TrimSuffix(composer.View(), "\n")
 	default:
 		input := m.input
 		input.Prompt = ""

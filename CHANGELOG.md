@@ -2,6 +2,12 @@
 
 Versions follow Semantic Versioning. Commit messages follow Conventional Commits.
 
+## 0.5.0-rc.3 (2026-11-20)
+
+- Navigate previously submitted prompts with ↑/↓ in the pinned CLI; restore the unsent draft after browsing history.
+- Keep approval/input prompts active when a task completes and process queued work afterward.
+- Show live token usage and elapsed time while agent tasks run.
+
 ## 0.5.0-rc.2 (2026-11-20)
 
 - Bound retained conversation history to complete recent turns.
