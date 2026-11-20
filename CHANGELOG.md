@@ -2,6 +2,11 @@
 
 Versions follow Semantic Versioning. Commit messages follow Conventional Commits.
 
+## 0.5.0-rc.4 (2026-11-20)
+
+- Keep the pinned CLI composer in a dedicated three-line area with status and footer separated from input.
+- Use Esc to cancel a running turn; show the cancel hint and sovcore copyright in the footer.
+
 ## 0.5.0-rc.3 (2026-11-20)
 
 - Navigate previously submitted prompts with ↑/↓ in the pinned CLI; restore the unsent draft after browsing history.

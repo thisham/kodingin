@@ -108,7 +108,7 @@ func newPinned(banner string, color bool) *pinned {
 	composer := textarea.New()
 	composer.Prompt = ""
 	composer.ShowLineNumbers = false
-	composer.SetHeight(1)
+	composer.SetHeight(3)
 	// Enter submits; Alt+Enter or Ctrl-J insert a newline via (*pinned).newline
 	// (terminals cannot report Shift+Enter). Unbind the textarea's own newline key.
 	composer.KeyMap.InsertNewline.SetEnabled(false)
@@ -218,7 +218,7 @@ func (m *pinned) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				return m, m.editComposer(msg)
 			}
-		case tea.KeyCtrlC:
+		case tea.KeyEsc:
 			if m.cancelTurn != nil {
 				m.cancelling = true
 				m.cancelTurn()
@@ -228,6 +228,8 @@ func (m *pinned) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.queued = nil
 				m.resetInput()
 				m.input.Blur()
+			} else if !m.transcript.AtBottom() {
+				m.transcript.GotoBottom()
 			} else {
 				m.resetInput()
 				m.continuation.Reset()
@@ -320,10 +322,7 @@ func (m *pinned) scrollKey(msg tea.KeyMsg) bool {
 	case "ctrl+end":
 		m.transcript.GotoBottom()
 	case "esc":
-		if m.transcript.AtBottom() {
-			return false
-		}
-		m.transcript.GotoBottom()
+		return false
 	default:
 		return false
 	}
@@ -401,8 +400,12 @@ func (m *pinned) resizeInput() {
 	m.input.SetCursor(m.input.Position())
 	m.composer.SetWidth(width)
 	lines := visualInputLines(m.composer.Value(), width)
-	m.composer.SetHeight(min(max(1, lines), max(1, m.height-2)))
-	m.transcript.Height = max(0, m.height-m.composer.Height()-1)
+	composerHeight := min(max(3, lines), max(3, m.height-6))
+	if m.height >= 7 {
+		composerHeight = 3
+	}
+	m.composer.SetHeight(composerHeight)
+	m.transcript.Height = max(0, m.height-m.composer.Height()-3)
 }
 
 // visualInputLines counts wrapped lines as well as explicit newlines. Without
@@ -571,7 +574,7 @@ func (m *pinned) View() string {
 		}
 		composer := m.composer
 		composer.Prompt = ""
-		status := fmt.Sprintf("%s Working · %s in / %s out tokens · %s elapsed · %d queued · Ctrl-C cancels", frame, compact(m.usageIn), compact(m.usageOut), time.Since(m.started).Round(time.Second), len(m.queued))
+		status := fmt.Sprintf("%s Working · %s in / %s out tokens · %s elapsed · %d queued", frame, compact(m.usageIn), compact(m.usageOut), time.Since(m.started).Round(time.Second), len(m.queued))
 		footer = status + "\n" + m.label() + strings.TrimSuffix(composer.View(), "\n")
 	default:
 		input := m.input
@@ -584,11 +587,20 @@ func (m *pinned) View() string {
 			footer = m.label() + strings.TrimSuffix(composer.View(), "\n")
 		}
 	}
+	if m.height >= 7 {
+		footer += "\n\n"
+		footer += "  Esc to cancel" + strings.Repeat(" ", max(1, width-ansi.StringWidth("  Esc to cancel   © sovcore"))) + "© sovcore"
+	} else {
+		footer = strings.TrimSuffix(footer, "\n")
+	}
 	if !m.color {
 		footer = ansi.Strip(footer)
 	}
 	footerLines := strings.Split(footer, "\n")
 	for i := range footerLines {
+		if i == len(footerLines)-1 && m.height >= 7 {
+			continue
+		}
 		footerLines[i] = ansi.Truncate(footerLines[i], width, "")
 	}
 	footer = strings.Join(footerLines, "\n")

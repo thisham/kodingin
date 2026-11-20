@@ -28,13 +28,36 @@ func TestPinnedFooter(t *testing.T) {
 				t.Fatalf("%+v: line exceeds width: %q", size, line)
 			}
 		}
-		if size.Height > 2 {
+		if size.Height > 6 {
 			m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
 			offset := m.transcript.YOffset
 			m.Update(transcriptText("another line\n"))
 			if m.transcript.AtBottom() || m.transcript.YOffset != offset {
 				t.Fatal("output moved a transcript that was scrolled back")
 			}
+		}
+	}
+}
+
+func TestPinnedBusyComposerHasDedicatedThreeLineAreaAndFooter(t *testing.T) {
+	m := newPinned("", false)
+	m.ctx = context.Background()
+	m.run = func(context.Context, string) bool { return false }
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.composer.SetValue("draft")
+	m.resizeInput()
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("turn did not start")
+	}
+	view := m.View()
+	if m.composer.Height() != 3 || !strings.Contains(view, "draft") || !strings.Contains(view, "Esc to cancel") || !strings.Contains(view, "© sovcore") {
+		t.Fatalf("unexpected busy composer layout (height %d):\n%s", m.composer.Height(), view)
+	}
+	lines := strings.Split(view, "\n")
+	for i, line := range lines {
+		if ansi.StringWidth(line) > 100 {
+			t.Fatalf("line %d exceeds width: %q", i, line)
 		}
 	}
 }
@@ -114,7 +137,7 @@ func TestPinnedPrompt(t *testing.T) {
 				t.Fatalf("unexpected prompt view: %q", view)
 			}
 			if tt.cancel {
-				m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+				m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 				m.Update(promptRequest{label: "Late prompt", reply: reply})
 				if ctx.Err() == nil || m.request != nil || len(reply) != 0 {
 					t.Fatal("cancelled turn still accepts replies")

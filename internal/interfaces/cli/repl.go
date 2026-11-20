@@ -86,7 +86,7 @@ func (r *REPL) banner() {
 	fmt.Fprintf(r.out, "\n%s%skodingin%s %sv%s%s\n", bold, mag, reset, dim, version.Current, reset)
 	fmt.Fprintf(r.out, "  %sGo coding agent · explore, edit, verify%s\n\n", dim, reset)
 	r.status()
-	fmt.Fprintf(r.out, "\n  %s/help for commands · trailing \\ for multiline · Ctrl-C cancels a turn%s\n\n", dim, reset)
+	fmt.Fprintf(r.out, "\n  %s/help for commands · trailing \\ for multiline · Esc cancels a turn%s\n\n", dim, reset)
 	if r.startNotice != "" {
 		fmt.Fprint(r.out, r.startNotice)
 	}
@@ -101,7 +101,7 @@ func (r *REPL) status() {
 }
 
 func (r *REPL) help() {
-	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Start a new conversation (the old one stays saved)\n  /resume [n]        List saved sessions or continue one\n  /compact [focus]   Summarise the conversation to free context\n  /status            Show model, workspace, approvals and usage\n  /history [n]       Recent prompts across sessions (default 20)\n  /usage             Token usage this session and saved history\n  /usage-credit      Account credit and limits (login|logout)\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /setup             Configure the saved endpoint and model\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  Enter sends. Alt+Enter or Ctrl-J inserts a newline.\n  End a line with \\ to continue on the next line. Ctrl-C cancels; Ctrl-D exits.\n\n%sScrolling%s\n  Mouse wheel, PgUp/PgDn, Shift+↑/↓ (or ↑/↓ with empty input), Ctrl+Home.\n  Esc or Ctrl+End jumps to the latest output. KODINGIN_NO_MOUSE=1 disables mouse capture.\n\n", bold, reset, bold, reset, bold, reset, bold, reset)
+	fmt.Fprintf(r.out, "\n%sConversation%s\n  /clear             Start a new conversation (the old one stays saved)\n  /resume [n]        List saved sessions or continue one\n  /compact [focus]   Summarise the conversation to free context\n  /status            Show model, workspace, approvals and usage\n  /history [n]       Recent prompts across sessions (default 20)\n  /usage             Token usage this session and saved history\n  /usage-credit      Account credit and limits (login|logout)\n  /version           Show application version\n  /exit              Quit (also /quit)\n\n%sConfiguration%s\n  /model [id]        List models or switch model\n  /api-key           Show masked key and check access\n  /api-key-set       Save a key using hidden input\n  /setup             Configure the saved endpoint and model\n  /yolo              Toggle approval prompts\n\n%sInput%s\n  Enter sends. Alt+Enter or Ctrl-J inserts a newline.\n  End a line with \\ to continue on the next line. Esc cancels; Ctrl-D exits.\n\n%sScrolling%s\n  Mouse wheel, PgUp/PgDn, Shift+↑/↓, Ctrl+Home. Esc cancels or jumps to latest output.\n  ↑/↓ navigate prompt history. KODINGIN_NO_MOUSE=1 disables mouse capture.\n\n", bold, reset, bold, reset, bold, reset, bold, reset)
 }
 
 func (r *REPL) beginTurn() {
