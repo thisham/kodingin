@@ -108,7 +108,7 @@ func newPinned(banner string, color bool) *pinned {
 	composer := textarea.New()
 	composer.Prompt = ""
 	composer.ShowLineNumbers = false
-	composer.SetHeight(3)
+	composer.SetHeight(1)
 	// Enter submits; Alt+Enter or Ctrl-J insert a newline via (*pinned).newline
 	// (terminals cannot report Shift+Enter). Unbind the textarea's own newline key.
 	composer.KeyMap.InsertNewline.SetEnabled(false)
@@ -400,10 +400,9 @@ func (m *pinned) resizeInput() {
 	m.input.SetCursor(m.input.Position())
 	m.composer.SetWidth(width)
 	lines := visualInputLines(m.composer.Value(), width)
-	composerHeight := min(max(3, lines), max(3, m.height-6))
-	if m.height >= 7 {
-		composerHeight = 3
-	}
+	// Grow with the prompt like a chat input: one line by default, expanding
+	// as text wraps, while always leaving room for the transcript and chrome.
+	composerHeight := min(max(1, lines), max(1, m.height-6))
 	m.composer.SetHeight(composerHeight)
 	m.transcript.Height = max(0, m.height-m.composer.Height()-3)
 }
@@ -558,12 +557,28 @@ func (m *pinned) label() string {
 	return ansi.Truncate(terminalText(label, m.color), max(0, m.width-8), "…")
 }
 
+// prompted renders the composer with the prompt label on its first line and
+// continuation lines aligned under the text, like a terminal chat input.
+func (m *pinned) prompted(view string) string {
+	label := m.label()
+	indent := strings.Repeat(" ", ansi.StringWidth(label))
+	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
+	for i := range lines {
+		if i == 0 {
+			lines[i] = label + lines[i]
+		} else {
+			lines[i] = indent + lines[i]
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (m *pinned) View() string {
 	if m.width < 1 || m.height < 1 {
 		return ""
 	}
 	width := max(1, m.width-1)
-	var footer string
+	var footer, status string
 	switch {
 	case m.cancelling:
 		footer = "Cancelling…"
@@ -574,8 +589,8 @@ func (m *pinned) View() string {
 		}
 		composer := m.composer
 		composer.Prompt = ""
-		status := fmt.Sprintf("%s Working · %s in / %s out tokens · %s elapsed · %d queued", frame, compact(m.usageIn), compact(m.usageOut), time.Since(m.started).Round(time.Second), len(m.queued))
-		footer = status + "\n" + m.label() + strings.TrimSuffix(composer.View(), "\n")
+		status = fmt.Sprintf("%s Working · %s in / %s out tokens · %s elapsed · %d queued", frame, compact(m.usageIn), compact(m.usageOut), time.Since(m.started).Round(time.Second), len(m.queued))
+		footer = m.prompted(composer.View())
 	default:
 		input := m.input
 		input.Prompt = ""
@@ -584,11 +599,15 @@ func (m *pinned) View() string {
 		} else {
 			composer := m.composer
 			composer.Prompt = ""
-			footer = m.label() + strings.TrimSuffix(composer.View(), "\n")
+			footer = m.prompted(composer.View())
 		}
 	}
 	if m.height >= 7 {
-		footer += "\n\n"
+		rule := strings.Repeat("─", width)
+		if m.color {
+			rule = dim + rule + reset
+		}
+		footer += "\n" + rule + "\n"
 		footer += "  Esc to cancel" + strings.Repeat(" ", max(1, width-ansi.StringWidth("  Esc to cancel   © sovcore"))) + "© sovcore"
 	} else {
 		footer = strings.TrimSuffix(footer, "\n")
@@ -605,13 +624,31 @@ func (m *pinned) View() string {
 	}
 	footer = strings.Join(footerLines, "\n")
 	footerHeight := len(footerLines)
+	// The working status sits above the input box, like a terminal agent's spinner.
+	if status != "" && m.height >= 7 {
+		if !m.color {
+			status = ansi.Strip(status)
+		}
+		status = ansi.Truncate(status, width, "")
+		footerHeight++
+	} else if status != "" {
+		footer = ansi.Truncate(status, width, "") + "\n" + footer
+		footerHeight++
+		status = ""
+	}
 	if m.height == 1 {
 		return footerLines[len(footerLines)-1]
 	}
 	divider := strings.Repeat("─", width)
+	if m.color {
+		divider = dim + divider + reset
+	}
 	transcriptHeight := max(0, m.height-footerHeight-1)
 	if transcriptHeight == 0 {
 		return divider + "\n" + footer
+	}
+	if status != "" {
+		divider = status + "\n" + divider
 	}
 	m.transcript.Height = transcriptHeight
 	if below := m.transcript.TotalLineCount() - m.transcript.YOffset - transcriptHeight; below > 0 {

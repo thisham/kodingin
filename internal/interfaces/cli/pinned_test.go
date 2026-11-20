@@ -39,7 +39,7 @@ func TestPinnedFooter(t *testing.T) {
 	}
 }
 
-func TestPinnedBusyComposerHasDedicatedThreeLineAreaAndFooter(t *testing.T) {
+func TestPinnedBusyComposerHasBorderedInputAndFooter(t *testing.T) {
 	m := newPinned("", false)
 	m.ctx = context.Background()
 	m.run = func(context.Context, string) bool { return false }
@@ -51,7 +51,7 @@ func TestPinnedBusyComposerHasDedicatedThreeLineAreaAndFooter(t *testing.T) {
 		t.Fatal("turn did not start")
 	}
 	view := m.View()
-	if m.composer.Height() != 3 || !strings.Contains(view, "draft") || !strings.Contains(view, "Esc to cancel") || !strings.Contains(view, "© sovcore") {
+	if m.composer.Height() != 1 || !strings.Contains(view, "draft") || !strings.Contains(view, "Esc to cancel") || !strings.Contains(view, "© sovcore") {
 		t.Fatalf("unexpected busy composer layout (height %d):\n%s", m.composer.Height(), view)
 	}
 	lines := strings.Split(view, "\n")
