@@ -156,6 +156,22 @@ func (m *pinned) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.transcript.ScrollUp(max(1, m.transcript.Height))
 		case tea.KeyPgDown:
 			m.transcript.ScrollDown(max(1, m.transcript.Height))
+		case tea.KeyHome:
+			if m.request == nil && m.composer.Value() == "" {
+				m.transcript.GotoTop()
+			} else if m.request != nil {
+				return m, m.editInput(msg)
+			} else {
+				return m, m.editComposer(msg)
+			}
+		case tea.KeyEnd:
+			if m.request == nil && m.composer.Value() == "" {
+				m.transcript.GotoBottom()
+			} else if m.request != nil {
+				return m, m.editInput(msg)
+			} else {
+				return m, m.editComposer(msg)
+			}
 		case tea.KeyCtrlC:
 			if m.cancelTurn != nil {
 				m.cancelling = true
@@ -265,13 +281,30 @@ func (m *pinned) newline() tea.Cmd {
 }
 
 func (m *pinned) resizeInput() {
-	width := max(1, m.width-2-ansi.StringWidth(m.label()))
+	available := max(1, m.width-2)
+	labelWidth := min(ansi.StringWidth(m.label()), max(8, available/3))
+	width := max(1, available-labelWidth)
 	m.input.Width = width
 	m.input.SetCursor(m.input.Position())
 	m.composer.SetWidth(width)
-	lines := strings.Count(m.composer.Value(), "\n") + 1
+	lines := visualInputLines(m.composer.Value(), width)
 	m.composer.SetHeight(min(max(1, lines), max(1, m.height-2)))
 	m.transcript.Height = max(0, m.height-m.composer.Height()-1)
+}
+
+// visualInputLines counts wrapped lines as well as explicit newlines. Without
+// this, a long prompt can be clipped by the textarea even though there is
+// enough vertical space for it.
+func visualInputLines(value string, width int) int {
+	if width < 1 {
+		return 1
+	}
+	lines := 0
+	for _, line := range strings.Split(value, "\n") {
+		lineWidth := ansi.StringWidth(strings.ReplaceAll(line, "\t", "    "))
+		lines += max(1, (lineWidth+width-1)/width)
+	}
+	return lines
 }
 
 func (m *pinned) resetInput() {

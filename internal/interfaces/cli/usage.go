@@ -34,6 +34,11 @@ func (r *REPL) recordUsage(u llm.Usage) {
 	if rec.Model == "" {
 		rec.Model = r.model
 	}
+	const maxSessionUsage = 1000
+	if len(r.sessionUsage) >= maxSessionUsage {
+		copy(r.sessionUsage, r.sessionUsage[len(r.sessionUsage)-maxSessionUsage+1:])
+		r.sessionUsage = r.sessionUsage[:maxSessionUsage-1]
+	}
 	r.sessionUsage = append(r.sessionUsage, rec)
 	if r.usageRepo == nil {
 		return

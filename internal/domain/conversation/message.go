@@ -81,6 +81,25 @@ const CompactPrefix = "[Summary of the earlier conversation, compacted to save c
 // Len counts messages excluding the system prompt.
 func (c *Conversation) Len() int { return len(c.messages) - 1 }
 
+// RetainRecent bounds conversation memory at a complete user-turn boundary.
+// The system prompt is always retained. A zero or negative limit is ignored.
+func (c *Conversation) RetainRecent(limit int) {
+	if limit <= 0 || c.Len() <= limit {
+		return
+	}
+	start := len(c.messages) - limit
+	for start < len(c.messages) && c.messages[start].Role != RoleUser {
+		start++
+	}
+	if start >= len(c.messages) {
+		return
+	}
+	kept := make([]Message, 1, len(c.messages)-start+1)
+	kept[0] = c.messages[0]
+	kept = append(kept, c.messages[start:]...)
+	c.messages = kept
+}
+
 // trimDangling drops a trailing assistant tool call whose results never arrived.
 func (c *Conversation) trimDangling() {
 	for {

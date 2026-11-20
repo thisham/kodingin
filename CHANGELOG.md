@@ -2,6 +2,12 @@
 
 Versions follow Semantic Versioning. Commit messages follow Conventional Commits.
 
+## 0.5.0-rc.2 (2026-11-20)
+
+- Bound retained conversation history to complete recent turns.
+- Bound in-memory session usage records to the latest 1,000 model calls.
+- Improve pinned CLI prompt wrapping and transcript navigation.
+
 ## 0.5.0-rc.1 (2026-11-20)
 
 - Add an autonomous harness mode that emits JSON traces for CI and agent evaluation.

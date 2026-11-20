@@ -21,22 +21,30 @@ type Observer interface {
 }
 
 type Agent struct {
-	llm      llm.Client
-	tools    *tool.Registry
-	conv     *conversation.Conversation
-	maxSteps int
+	llm         llm.Client
+	tools       *tool.Registry
+	conv        *conversation.Conversation
+	maxSteps    int
+	maxMessages int
 }
 
+const defaultMaxMessages = 200
+
 func NewAgent(c llm.Client, r *tool.Registry, conv *conversation.Conversation, maxSteps int) *Agent {
-	return &Agent{llm: c, tools: r, conv: conv, maxSteps: maxSteps}
+	return &Agent{llm: c, tools: r, conv: conv, maxSteps: maxSteps, maxMessages: defaultMaxMessages}
 }
+
+// SetMaxMessages bounds retained conversation history. It is primarily useful
+// for long-running agents; the system prompt and complete recent turns remain.
+func (a *Agent) SetMaxMessages(limit int) { a.maxMessages = limit }
 
 func (a *Agent) Reset() { a.conv.Reset() }
 
 const maxToolOutput = 20000
 
 // Ask runs one user turn: call the model, run tools it asks for, repeat until it answers in text.
-func (a *Agent) Ask(ctx context.Context, input string, obs Observer) error {
+func (a *Agent) Ask(ctx context.Context, input string, obs Observer) (err error) {
+	defer func() { a.conv.RetainRecent(a.maxMessages) }()
 	a.conv.AddUser(input)
 	for step := 0; step < a.maxSteps; step++ {
 		msg, usage, err := a.llm.Complete(ctx, a.conv.Messages(), a.tools.All())
