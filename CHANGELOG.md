@@ -2,6 +2,11 @@
 
 Versions follow Semantic Versioning. Commit messages follow Conventional Commits.
 
+## 0.5.0-rc.1 (2026-11-20)
+
+- Add an autonomous harness mode that emits JSON traces for CI and agent evaluation.
+- Add configurable harness timeouts and bounded tool output in reports.
+
 ## 0.4.1 (2026-11-18)
 
 - Release discarded conversation memory when clearing, compacting, restoring, or trimming interrupted tool calls.

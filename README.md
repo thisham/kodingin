@@ -11,6 +11,7 @@ CLI coding agent for Go/DDD projects, backed by `https://tokenizer.id/v1` (OpenA
     ./kodingin -C /path/to/project            # interactive REPL
     ./kodingin -C . -p "add a User aggregate"  # one shot
     ./kodingin -yes ...                        # auto-approve writes/shell
+    ./kodingin -harness -p "fix the failing tests" # autonomous JSON trace for CI/evaluation
 
 REPL: `/help`, `/status`, `/resume [n]`, `/compact [focus]`, `/history [n]`, `/usage`, `/usage-credit [login|logout]`, `/version`, `/model [id]`, `/setup`, `/api-key`, `/api-key-set`, `/clear`, `/yolo`, `/exit`. In interactive terminals, Enter submits and Alt+Enter or Ctrl-J inserts a newline; Ctrl-C cancels a turn. `/setup` modifies the saved endpoint and model in `~/.config/kodingin/env`; restart to apply. `/clear` resets conversation and session usage.
 

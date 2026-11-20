@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/thisham/kodingin/internal/application"
 	"github.com/thisham/kodingin/internal/domain/conversation"
@@ -30,6 +31,8 @@ func main() {
 	yolo := flag.Bool("yes", false, "auto-approve writes and shell commands")
 	prompt := flag.String("p", "", "run a single prompt and exit")
 	cont := flag.Bool("continue", false, "resume the most recent session")
+	harness := flag.Bool("harness", false, "run a prompt as an autonomous JSON harness")
+	timeout := flag.Duration("timeout", 10*time.Minute, "harness execution timeout")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 	if *showVersion {
@@ -74,7 +77,25 @@ func main() {
 		return config.SaveSettings(settings)
 	})
 
-	if p := strings.TrimSpace(*prompt + " " + strings.Join(flag.Args(), " ")); p != "" {
+	p := strings.TrimSpace(*prompt + " " + strings.Join(flag.Args(), " "))
+	if *harness {
+		if p == "" {
+			fmt.Fprintln(os.Stderr, "kodingin: -harness requires a prompt via -p or positional arguments")
+			os.Exit(2)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
+		report := application.RunHarness(ctx, agent, p)
+		data, marshalErr := application.MarshalHarnessReport(report)
+		if marshalErr != nil {
+			err = marshalErr
+		} else {
+			fmt.Println(string(data))
+			if !report.Success {
+				err = fmt.Errorf("harness failed: %s", report.Error)
+			}
+		}
+	} else if p != "" {
 		err = ui.RunOnce(p)
 	} else {
 		err = ui.Run()
