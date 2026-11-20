@@ -2,6 +2,10 @@
 
 Versions follow Semantic Versioning. Commit messages follow Conventional Commits.
 
+## 0.5.0-rc.5 (2026-11-20)
+
+- Style the pinned CLI composer like a chat input: rules above and below, one line that grows with the prompt, aligned continuation lines, and working status above the input.
+
 ## 0.5.0-rc.4 (2026-11-20)
 
 - Keep the pinned CLI composer in a dedicated three-line area with status and footer separated from input.
